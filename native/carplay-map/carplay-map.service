@@ -16,8 +16,8 @@ User=root
 Environment=WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/wayland PATH=/usr/bin:/bin
 # --gate-initial menu: no boot (sem CarPlay na frente) nao espelha nada ate o
 # CarPlay vir para a frente (evento PROJECTED). --fps 6, modo video (padrao).
-# Bottom-aligned crop: free-drive blue "me" sits at the bottom of the Dashboard map.
-ExecStart=/usr/bin/node /var/opt/carplay-map/current/carplay-map-cluster.js --fps 6 --gate-initial menu --crop 80,234,1100,486 --scale bilinear
+# Free-drive crop keeps blue "me"; nav crop lifts the window so ETA is clipped and far-ahead shows.
+ExecStart=/usr/bin/node /var/opt/carplay-map/current/carplay-map-cluster.js --fps 6 --gate-initial menu --crop 80,234,1100,486 --crop-nav 80,60,1100,486 --scale bilinear
 Restart=on-failure
 # No boot o cluster-render/winston podem ainda nao estar prontos; 5 s mantem as
 # retentativas longe do limite de start do systemd.

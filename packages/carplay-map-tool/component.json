@@ -1,9 +1,9 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "title": "CarPlay no cluster (produtor)",
-  "description": "Mirrors CarPlay Dashboard map to the cluster. Bottom-aligned crop keeps the no-route blue me-arrow visible. Holds last map when leaving Dashboard. Refuses if waze-on-cluster is installed.",
+  "description": "Mirrors CarPlay Dashboard map to the cluster. Free-drive crop keeps the blue me-arrow; nav crop clips the ETA strip so far-ahead stays visible. Holds last map when leaving Dashboard. Refuses if waze-on-cluster is installed.",
   "mguHmi": [
     "ID7"
   ],

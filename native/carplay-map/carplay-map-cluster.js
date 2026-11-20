@@ -28,7 +28,8 @@
  *   --socket PATH     socket do cluster-render (padrão /dev/shm/cluster-render/render.sock)
  *   --target NAME     map | panel | hud (padrão map)
  *   --fps N           quadros/s (padrão 3; imagem inteira ~2MB enche o orçamento de 6MB/s)
- *   --crop X,Y,W,H    região do 1920x720 a usar (padrão 80,234,1100,486 — bottom-aligned for free-drive me)
+ *   --crop X,Y,W,H    free-drive crop (padrão 80,234,1100,486 — bottom-aligned so blue "me" stays in frame)
+ *   --crop-nav X,Y,W,H  crop while projectedGuidanceActive (padrão 80,60,1100,486 — higher so ETA is clipped and far-ahead shows)
  *   --fit MODE        cover | contain | fill (padrão cover)
  *   --scale MODE      nearest | bilinear (padrão nearest; mais rápido)
  *   --order ORD       rgba | bgra (ordem de canais do winston-grabber; padrão bgra)
@@ -370,8 +371,10 @@ function grab(a, cb) {
 /* ---------------------------------------------------------------- args */
 function parseArgs(argv) {
     const a = { socket: '/dev/shm/cluster-render/render.sock', target: 'map', fps: 3,
-        /* Match cluster aspect; bottom-align so the free-drive blue "me" arrow (bottom of Dashboard map) stays in frame. */
-        crop: { x: 80, y: 234, w: 1100, h: 486 }, fit: 'cover', scale: 'bilinear', order: 'bgra',
+        /* Free-drive: bottom-align so blue "me" stays in frame. With route: higher crop clips ETA and keeps far-ahead. */
+        crop: { x: 80, y: 234, w: 1100, h: 486 },
+        cropNav: { x: 80, y: 60, w: 1100, h: 486 },
+        fit: 'cover', scale: 'bilinear', order: 'bgra',
         capture: 'raw', mode: 'video', gate: true, gateInitial: 'front', wayland: 'wayland-0', xdg: '/run/wayland',
         capTool: '', screen: 'center', tmp: '', capW: 1920, capH: 720,
         control: true, ctlSock: '/dev/shm/carplay-map/ctl.sock', requireGuidance: false,
@@ -384,6 +387,7 @@ function parseArgs(argv) {
         else if (k === '--target') a.target = argv[++i];
         else if (k === '--fps') a.fps = Math.max(0.2, parseFloat(argv[++i]) || 3);
         else if (k === '--crop') { const m = (argv[++i] || '').split(','); a.crop = { x: +m[0], y: +m[1], w: +m[2], h: +m[3] }; }
+        else if (k === '--crop-nav') { const m = (argv[++i] || '').split(','); a.cropNav = { x: +m[0], y: +m[1], w: +m[2], h: +m[3] }; }
         else if (k === '--fit') a.fit = argv[++i];
         else if (k === '--scale') a.scale = argv[++i];
         else if (k === '--order') a.order = argv[++i];
@@ -501,7 +505,8 @@ function main() {
         ? cr.video({ target: a.target, x: 0, y: 0, w: outW, h: outH, vw: outW, vh: outH, fps: Math.max(1, Math.round(a.fps)), contend: a.contend })
         : cr.image({ target: a.target, x: 0, y: 0, w: outW, h: outH, iw: outW, ih: outH, contend: a.contend, sampling: 'bilinear' });
     if (!ref) { console.error(a.mode + ' layer recusado'); process.exit(1); }
-    log('alvo ' + a.target + ' ' + outW + 'x' + outH + ' (' + a.mode + '), crop ' + [a.crop.x, a.crop.y, a.crop.w, a.crop.h].join(',') +
+    log('alvo ' + a.target + ' ' + outW + 'x' + outH + ' (' + a.mode + '), crop-free ' + [a.crop.x, a.crop.y, a.crop.w, a.crop.h].join(',') +
+        ', crop-nav ' + [a.cropNav.x, a.cropNav.y, a.cropNav.w, a.cropNav.h].join(',') +
         ', fit ' + a.fit + '/' + a.scale + ', captura ' + a.capture + '(' + a.order + '), ' + a.fps + ' fps, gate ' + (a.gate ? 'on' : 'OFF') + (a.requireGuidance ? ' (só navegando)' : '') +
         ', formato ' + (a.requireFormat ? 'Dashboard (meio>=' + a.fmt.tMap + '% células<=' + a.fmt.tCells + ')' : 'OFF') +
         ', hold-last ' + (a.holdLast ? 'on' : 'OFF'));
@@ -510,10 +515,14 @@ function main() {
     const ctlState = { masterEnabled: true };
     let hub = null;
     let hold = { has: false, kind: null, buf: null, holding: false };
+    let cropMode = null;
+    function activeCrop() {
+        return (gate.guidance === true) ? a.cropNav : a.crop;
+    }
     const gate = a.gate ? startGate(a.gateInitial !== 'menu', log, (front, o) => {
         log('>> screenOwner=' + o + ' -> ' + (front ? 'CarPlay front' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
         if (hub) hub.status();
-    }) : { front: true, ok: false };
+    }) : { front: true, guidance: null, ok: false };
     let fmtState = null; /* null = ainda não capturou; true = Dashboard; false = outro formato */
     function ctlStatus() {
         const fmtOk = !a.requireFormat || fmtState === true;
@@ -600,13 +609,20 @@ function main() {
             hold.holding = false;
             apply(true);
             try {
+                const crop = activeCrop();
+                const mode = gate.guidance === true ? 'nav' : 'free';
+                if (mode !== cropMode) {
+                    cropMode = mode;
+                    log('>> crop ' + mode + ' ' + [crop.x, crop.y, crop.w, crop.h].join(',') +
+                        (mode === 'nav' ? ' (clip ETA / show far-ahead)' : ' (keep me-arrow)'));
+                }
                 if (a.mode === 'video') {
-                    const atlas = processToYUV(img, { outW: outW, outH: outH, crop: a.crop, fit: a.fit, scale: a.scale });
+                    const atlas = processToYUV(img, { outW: outW, outH: outH, crop: crop, fit: a.fit, scale: a.scale });
                     cr.frame(ref, atlas, frames); frames++;
                     hold.has = true; hold.kind = 'video'; hold.buf = Buffer.from(atlas);
                     if (a.save && frames === 1) fs.writeFileSync(a.save, encodePNG(yuvAtlasToRGBA(atlas, outW, outH), outW, outH));
                 } else {
-                    const o = processImage(img, { outW: outW, outH: outH, crop: a.crop, fit: a.fit, scale: a.scale });
+                    const o = processImage(img, { outW: outW, outH: outH, crop: crop, fit: a.fit, scale: a.scale });
                     cr.pixels(ref, null, o.rgba); frames++;
                     hold.has = true; hold.kind = 'image'; hold.buf = Buffer.from(o.rgba);
                     if (a.save && frames === 1) fs.writeFileSync(a.save, encodePNG(o.rgba, outW, outH));
