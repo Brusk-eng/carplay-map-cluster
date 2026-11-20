@@ -22,6 +22,12 @@ echo "== CarPlay map -> cluster: instalador =="
 [ -f "$PRODUCER" ] || { echo "ERRO: produtor nao encontrado em $PRODUCER"; exit 1; }
 
 echo "-- checando pre-requisitos --"
+# Separate product from robertn's waze-on-cluster; both fight the cluster map slot.
+if [ -e /var/opt/waze-on-cluster/current ] || "$MD" status 2>/dev/null | grep -qi 'waze-on-cluster'; then
+  echo "ERRO: waze-on-cluster esta instalado."
+  echo "      CarPlay map -> cluster e outro app (espelho). Desinstale waze-on-cluster no Store antes."
+  exit 1
+fi
 if ! "$MD" status 2>/dev/null | grep -qi 'cluster-render'; then
   echo "ERRO: cluster-render nao detectado. Instale-o pelo MGU Store antes (ele faz o trabalho pesado)."
   exit 1
@@ -46,6 +52,8 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/files" "$TMP/units"
 cp "$PRODUCER" "$TMP/files/carplay-map-cluster.js"
+CHECK="$HERE/native/carplay-map/check-conflict.js"
+[ -f "$CHECK" ] && cp "$CHECK" "$TMP/files/check-conflict.js"
 UNIT_SRC="$HERE/native/carplay-map/carplay-map.service"
 [ -f "$UNIT_SRC" ] || UNIT_SRC="$PKG/units/carplay-map.service"
 cp "$UNIT_SRC" "$TMP/units/carplay-map.service"

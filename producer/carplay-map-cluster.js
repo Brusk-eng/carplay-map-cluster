@@ -477,7 +477,9 @@ function main() {
     })();
     try {
         if (fs.existsSync('/var/opt/waze-on-cluster/current') || fs.existsSync('/run/waze-on-cluster')) {
-            log('AVISO: waze-on-cluster parece instalado — ambos disputam o slot do mapa; desligue o patch/app dele se a imagem piscar ou sumir');
+            console.error('RECUSADO: waze-on-cluster esta instalado. Este espelho e outro app e disputa o mesmo slot do mapa.');
+            console.error('Desinstale waze-on-cluster (Store) antes de usar carplay-map.');
+            process.exit(1);
         }
     } catch (e) {}
     const cr = new ClusterRender('carplay_map_shot', a.socket);

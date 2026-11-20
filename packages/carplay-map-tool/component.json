@@ -1,12 +1,16 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "title": "CarPlay no cluster (produtor)",
-  "description": "Captura o mapa do CarPlay da central e alimenta o cluster-render; ligado/desligado pelo app Mapa no Cluster. Prefer native/carplay-map for MGU Store.",
+  "description": "Mirrors the CarPlay Dashboard map onto the instrument cluster via cluster-render. No CarPlay binary patch. Separate from robertn waze-on-cluster \u2014 refuse to install/run if that tool is installed (same map slot).",
   "files": [
     {
       "path": "carplay-map-cluster.js",
+      "mode": "0755"
+    },
+    {
+      "path": "check-conflict.js",
       "mode": "0755"
     }
   ],
@@ -31,6 +35,10 @@
     "mgu-deploy": "0.6.3",
     "cluster-render": "0.2.0"
   },
+  "activate": [
+    "node",
+    "check-conflict.js"
+  ],
   "mguHmi": [
     "ID7"
   ]
