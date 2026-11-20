@@ -476,7 +476,8 @@ function main() {
             (lastErr && lastErr.message || lastErr));
     })();
     try {
-        if (fs.existsSync('/var/opt/waze-on-cluster/current') || fs.existsSync('/run/waze-on-cluster')) {
+        /* Only the live install symlink — leftover /run after uninstall must not block. */
+        if (fs.existsSync('/var/opt/waze-on-cluster/current')) {
             console.error('RECUSADO: waze-on-cluster esta instalado. Este espelho e outro app e disputa o mesmo slot do mapa.');
             console.error('Desinstale waze-on-cluster (Store) antes de usar carplay-map.');
             process.exit(1);

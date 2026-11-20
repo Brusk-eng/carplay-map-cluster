@@ -1,7 +1,7 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "title": "CarPlay map → cluster",
   "description": "Mirrors the CarPlay Dashboard map onto the instrument cluster via cluster-render. No CarPlay binary patch. Separate from robertn waze-on-cluster — refuse to install/run if that tool is installed (same map slot).",
   "mguHmi": ["ID7"],

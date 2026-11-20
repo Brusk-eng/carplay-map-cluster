@@ -1,19 +1,18 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MPL-2.0
-/* activate hook: refuse this tool while robertn's waze-on-cluster is installed.
- * Store/mgu-deploy rolls the install back if activate exits non-zero. */
+/* activate hook: refuse this tool while robertn's waze-on-cluster is current.
+ * Store/mgu-deploy rolls the install back if activate exits non-zero.
+ * Only /var/opt/waze-on-cluster/current counts — leftover versions/ or /run/
+ * after uninstall must not false-block. */
 'use strict';
 var fs = require('fs');
 
 function present() {
     try {
-        if (fs.existsSync('/var/opt/waze-on-cluster/current')) return true;
-        if (fs.existsSync('/var/opt/waze-on-cluster/versions')) {
-            var v = fs.readdirSync('/var/opt/waze-on-cluster/versions');
-            if (v && v.length) return true;
-        }
-    } catch (e) {}
-    return false;
+        return fs.existsSync('/var/opt/waze-on-cluster/current');
+    } catch (e) {
+        return false;
+    }
 }
 
 if (present()) {

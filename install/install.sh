@@ -23,8 +23,8 @@ echo "== CarPlay map -> cluster: instalador =="
 
 echo "-- checando pre-requisitos --"
 # Separate product from robertn's waze-on-cluster; both fight the cluster map slot.
-if [ -e /var/opt/waze-on-cluster/current ] || "$MD" status 2>/dev/null | grep -qi 'waze-on-cluster'; then
-  echo "ERRO: waze-on-cluster esta instalado."
+if [ -e /var/opt/waze-on-cluster/current ]; then
+  echo "ERRO: waze-on-cluster esta instalado (/var/opt/waze-on-cluster/current)."
   echo "      CarPlay map -> cluster e outro app (espelho). Desinstale waze-on-cluster no Store antes."
   exit 1
 fi
@@ -58,32 +58,31 @@ UNIT_SRC="$HERE/native/carplay-map/carplay-map.service"
 [ -f "$UNIT_SRC" ] || UNIT_SRC="$PKG/units/carplay-map.service"
 cp "$UNIT_SRC" "$TMP/units/carplay-map.service"
 
-CLIENT_SHA=""
 if [ -n "$CLIENT" ] && [ -f "$CLIENT" ]; then
   cp "$CLIENT" "$TMP/files/cluster_render_client.js"
-  CLIENT_SHA=$(sha256sum "$TMP/files/cluster_render_client.js" | awk '{print $1}')
 fi
-SHA_P=$(sha256sum "$TMP/files/carplay-map-cluster.js" | awk '{print $1}')
 
-# Avoid set -e abort from a failed command-substitution when CLIENT_SHA is empty.
+# Hash every payload file — mgu-deploy refuses missing sha256.
 node -e '
-  var fs=require("fs");
+  var fs=require("fs"), path=require("path"), crypto=require("crypto");
   var d=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
-  var shaP=process.argv[2], clientSha=process.argv[3] || "";
-  d.files=(d.files||[]).filter(function(f){
-    return f.path!=="cluster_render_client.js" || !!clientSha;
+  var filesDir=process.argv[2], out=process.argv[3];
+  function sha(p){ return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex"); }
+  var onDisk={};
+  fs.readdirSync(filesDir).forEach(function(n){
+    var p=path.join(filesDir,n);
+    if (fs.statSync(p).isFile()) onDisk[n]=sha(p);
   });
-  if (clientSha) {
-    var has=false;
-    (d.files||[]).forEach(function(f){ if(f.path==="cluster_render_client.js") has=true; });
-    if (!has) d.files.push({ path: "cluster_render_client.js", mode: "0644" });
-  }
-  (d.files||[]).forEach(function(f){
-    if(f.path==="carplay-map-cluster.js") f.sha256=shaP;
-    if(f.path==="cluster_render_client.js" && clientSha) f.sha256=clientSha;
+  d.files=(d.files||[]).filter(function(f){ return !!onDisk[f.path]; });
+  Object.keys(onDisk).forEach(function(n){
+    if (!(d.files||[]).some(function(f){ return f.path===n; })) {
+      d.files.push({ path: n, mode: n.slice(-3)===".js" ? "0755" : "0644" });
+    }
   });
-  fs.writeFileSync(process.argv[4], JSON.stringify(d,null,2));
-' "$PKG/component.json" "$SHA_P" "$CLIENT_SHA" "$TMP/component.json"
+  (d.files||[]).forEach(function(f){ f.sha256=onDisk[f.path]; });
+  if (!(d.files||[]).length) throw new Error("no payload files");
+  fs.writeFileSync(out, JSON.stringify(d,null,2));
+' "$PKG/component.json" "$TMP/files" "$TMP/component.json"
 
 ( cd "$TMP" && tar czf /tmp/carplay-map.tool.tgz component.json files units )
 
@@ -102,5 +101,4 @@ echo ""
 echo "== PRONTO =="
 echo "Abra o CarPlay num mapa (layout Dashboard: mapa + os cards do lado) e olhe o cluster."
 echo "Liga/desliga pelo app 'Mapa no Cluster'. Sobe sozinho no boot."
-echo "Se waze-on-cluster tambem estiver ativo, desligue-o — os dois disputam o slot do mapa."
 "$MD" status 2>/dev/null | grep -iE 'carplay-map|cluster-render|carplay_map_toggle' || true
