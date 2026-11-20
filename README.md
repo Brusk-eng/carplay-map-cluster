@@ -1,4 +1,4 @@
-# CarPlay map → instrument cluster (Store-ready fork)
+# CarPlay map → instrument cluster (Store-ready)
 
 Mirrors the **CarPlay Dashboard map** onto the BMW **iDrive 7 / MGU** instrument cluster **without** patching `/usr/bin/carplay`.
 
@@ -7,38 +7,35 @@ Mirrors the **CarPlay Dashboard map** onto the BMW **iDrive 7 / MGU** instrument
 | Tool | `carplay-map` **0.2.4** |
 | Toggle app | `carplay_map_toggle` **0.1.0** (“Mapa no Cluster”) |
 | Catalog | `mgu-repo.json` (MGU Store **Add source** works) |
-| Upstream idea | [isaakbruno2/carplay-map-cluster](https://github.com/isaakbruno2/carplay-map-cluster) |
-| This fork | [Brusk-eng/carplay-map-cluster](https://github.com/Brusk-eng/carplay-map-cluster) |
+| Repo | [Brusk-eng/carplay-map-cluster](https://github.com/Brusk-eng/carplay-map-cluster) |
 
 ![Demo](docs/demo.webp)
 
-*Mirror of CarPlay’s map on the cluster (left) while Dashboard stays on the center screen (right). Upstream demo: G20, CarPlay 0.20.20.*
+*Mirror of CarPlay’s map on the cluster (left) while Dashboard stays on the center screen (right).*
 
-> This is a **screen copy**, not Robert’s second video stream. It will not feel like patched CarPlay 21/22.
+> This is a **screen copy**, not a second CarPlay video stream. It will not feel like patched CarPlay 21/22.
 
 ---
 
-## Why this fork exists
+## Why this exists
 
-Upstream `isaakbruno2/carplay-map-cluster` has **no** `mgu-repo.json`, so MGU Store shows:
+Some older CarPlay builds cannot be patched for a real cluster stream (`patchable: no`). This tool is a workaround: capture the center screen and paint the map into **`cluster-render`**.
 
-`no mgu-repo.json` → **0 components**
-
-This repo adds a Store catalog + `native/carplay-map/` tool layout, loads `cluster_render_client.js` from the installed **cluster-render** package (not redistributed), and **refuses** to install/run beside `waze-on-cluster`.
+It ships with `mgu-repo.json` so MGU Store **Add source** works.
 
 ---
 
 ## What it is (and isn’t)
 
-**Robert’s `waze-on-cluster`** patches CarPlay so the phone opens an **alternate-display** stream to the cluster. That needs a patchable CarPlay build (proven **21.27.4** / **22.28.3**). On older builds (e.g. **0.20.20**, **20.40.2**) probe says `patchable: no`.
+**`waze-on-cluster`** (robertn / idrive-apps) patches CarPlay so the phone opens an **alternate-display** stream to the cluster. That needs a patchable CarPlay build (proven **21.27.4** / **22.28.3**). On older builds (e.g. **20.40.2**) probe says `patchable: no`.
 
 **This tool** instead:
 
 1. Captures the **center** screen with stock `winston-grabber`
 2. Crops the map region
-3. Pushes frames into Robert’s **`cluster-render`** (~3–6 fps)
+3. Pushes frames into **`cluster-render`** (~3–6 fps)
 
-| | This fork (`carplay-map`) | Robert (`waze-on-cluster`) |
+| | This tool (`carplay-map`) | `waze-on-cluster` |
 |---|---|---|
 | Touches `/usr/bin/carplay` | No | Yes |
 | Needs patchable CarPlay | No | Yes |
@@ -52,7 +49,7 @@ This repo adds a Store catalog + `native/carplay-map/` tool layout, loads `clust
 
 These are **different** products that fight the same cluster map slot.
 
-This fork **blocks** if `/var/opt/waze-on-cluster/current` exists:
+This tool **blocks** if `/var/opt/waze-on-cluster/current` exists:
 
 - SSH `install/install.sh`
 - Store **activate** (`check-conflict.js` → install rolls back)
@@ -81,8 +78,6 @@ This fork **blocks** if `/var/opt/waze-on-cluster/current` exists:
 5. Install **Mapa no Cluster** (`carplay_map_toggle`)  
 6. Connect iPhone CarPlay → open a map in **Dashboard** layout (map left + cards right)  
 7. Look at the instrument cluster  
-
-Remove the broken upstream source `isaakbruno2/carplay-map-cluster` if you added it earlier.
 
 ---
 
@@ -129,8 +124,7 @@ docs/demo.webp                demo image
 
 ## Credits & license
 
-- Capture→cluster idea and original code: **[isaakbruno2/carplay-map-cluster](https://github.com/isaakbruno2/carplay-map-cluster)** (MPL-2.0 / app GPL as marked)
 - Cluster drawing: **robertn** [`cluster-render`](https://github.com/robertnisipeanu/idrive-apps) / [MGU Store](https://github.com/robertnisipeanu/mgu-store) (GPL — client loaded from the installed package, not vendored here)
-- This fork: Store packaging, conflict guards, runtime client path — [Brusk-eng/carplay-map-cluster](https://github.com/Brusk-eng/carplay-map-cluster)
+- This repo: [Brusk-eng/carplay-map-cluster](https://github.com/Brusk-eng/carplay-map-cluster)
 
-See [LICENSE](LICENSE).
+Producer / packaging: **MPL-2.0**. Toggle app: see headers / [LICENSE](LICENSE).
