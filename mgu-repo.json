@@ -4,10 +4,12 @@
     {
       "id": "carplay-map",
       "kind": "tool",
-      "title": "CarPlay map → cluster",
-      "version": "0.2.4",
+      "title": "CarPlay map \u2192 cluster",
+      "version": "0.2.5",
       "path": "native/carplay-map",
-      "mguHmi": ["ID7"],
+      "mguHmi": [
+        "ID7"
+      ],
       "uninstallable": true,
       "requires": {
         "mgu-deploy": "0.6.3",
@@ -21,10 +23,12 @@
       "version": "0.1.0",
       "path": "app/carplay_map_toggle",
       "build": "unit",
-      "mguHmi": ["ID7"],
+      "mguHmi": [
+        "ID7"
+      ],
       "uninstallable": true,
       "requires": {
-        "carplay-map": "0.2.4",
+        "carplay-map": "0.2.5",
         "app-privacy": "1.0.0"
       }
     }

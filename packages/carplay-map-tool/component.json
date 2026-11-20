@@ -1,9 +1,9 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "title": "CarPlay no cluster (produtor)",
-  "description": "Mirrors the CarPlay Dashboard map onto the instrument cluster via cluster-render. No CarPlay binary patch. Separate from robertn waze-on-cluster \u2014 refuse to install/run if that tool is installed (same map slot).",
+  "description": "Mirrors the CarPlay Dashboard map onto the instrument cluster via cluster-render. Holds the last map frame when you leave Dashboard (e.g. Spotify) until Dashboard returns. Refuses if waze-on-cluster is installed.",
   "files": [
     {
       "path": "carplay-map-cluster.js",

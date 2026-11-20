@@ -1,16 +1,21 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.4",
-  "title": "CarPlay map → cluster",
-  "description": "Mirrors the CarPlay Dashboard map onto the instrument cluster via cluster-render. No CarPlay binary patch. Separate from robertn waze-on-cluster — refuse to install/run if that tool is installed (same map slot).",
-  "mguHmi": ["ID7"],
+  "version": "0.2.5",
+  "title": "CarPlay map \u2192 cluster",
+  "description": "Mirrors the CarPlay Dashboard map onto the instrument cluster via cluster-render. Holds the last map frame when you leave Dashboard (e.g. Spotify) until Dashboard returns. Refuses if waze-on-cluster is installed.",
+  "mguHmi": [
+    "ID7"
+  ],
   "uninstallable": true,
   "requires": {
     "mgu-deploy": "0.6.3",
     "cluster-render": "0.2.0"
   },
-  "activate": ["node", "check-conflict.js"],
+  "activate": [
+    "node",
+    "check-conflict.js"
+  ],
   "files": [
     {
       "path": "carplay-map-cluster.js",
@@ -33,6 +38,10 @@
       "target": "multi-user.target"
     }
   ],
-  "recmgr": ["carplay-map"],
-  "restart": ["carplay-map.service"]
+  "recmgr": [
+    "carplay-map"
+  ],
+  "restart": [
+    "carplay-map.service"
+  ]
 }

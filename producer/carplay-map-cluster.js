@@ -42,6 +42,9 @@
  *   --no-contend      não disputar o slot do mapa stock
  *   --once            1 quadro e sai (debug no carro)
  *   --no-require-format  não checar o formato (espelha qualquer tela do CarPlay)
+ *   --hold-last       keep last Dashboard map on the cluster when layout leaves
+ *                     Dashboard / CarPlay briefly drops (default ON; freeze, not live)
+ *   --no-hold-last    hide immediately when not Dashboard (old behaviour)
  *   --fmt-map X0,Y0,X1,Y1   região "mapa" em frações 0..1 (padrão .10,.12,.58,.88)
  *   --fmt-right X0,Y0,X1,Y1 região "cards" em frações 0..1 (padrão .645,.06,.985,.95)
  *   --fmt-th SAT,TMAP,TCELLS limiares: sat/pixel, meio>=TMAP%, nº células dir<=TCELLS (padrão 40,5,7)
@@ -371,7 +374,7 @@ function parseArgs(argv) {
         capture: 'raw', mode: 'video', gate: true, gateInitial: 'front', wayland: 'wayland-0', xdg: '/run/wayland',
         capTool: '', screen: 'center', tmp: '', capW: 1920, capH: 720,
         control: true, ctlSock: '/dev/shm/carplay-map/ctl.sock', requireGuidance: false,
-        requireFormat: true, calibrate: false,
+        requireFormat: true, holdLast: true, calibrate: false,
         fmt: { mapX0: 0.10, mapY0: 0.12, mapX1: 0.58, mapY1: 0.88, rX0: 0.645, rY0: 0.06, rX1: 0.985, rY1: 0.95, satTh: 40, tMap: 5, tCells: 7, cellTh: 15, cols: 4, rows: 4, step: 70 },
         contend: true, once: false, infile: '', save: '', verbose: false };
     for (let i = 0; i < argv.length; i++) {
@@ -400,6 +403,8 @@ function parseArgs(argv) {
         else if (k === '--no-require-guidance') a.requireGuidance = false;
         else if (k === '--require-format') a.requireFormat = true;
         else if (k === '--no-require-format') a.requireFormat = false;
+        else if (k === '--hold-last') a.holdLast = true;
+        else if (k === '--no-hold-last') a.holdLast = false;
         else if (k === '--fmt-map') { const m = (argv[++i] || '').split(','); a.fmt.mapX0 = +m[0]; a.fmt.mapY0 = +m[1]; a.fmt.mapX1 = +m[2]; a.fmt.mapY1 = +m[3]; }
         else if (k === '--fmt-right') { const m = (argv[++i] || '').split(','); a.fmt.rX0 = +m[0]; a.fmt.rY0 = +m[1]; a.fmt.rX1 = +m[2]; a.fmt.rY1 = +m[3]; }
         else if (k === '--fmt-th') { const m = (argv[++i] || '').split(','); a.fmt.satTh = +m[0]; a.fmt.tMap = +m[1]; a.fmt.tCells = +m[2]; }
@@ -497,56 +502,112 @@ function main() {
     if (!ref) { console.error(a.mode + ' layer recusado'); process.exit(1); }
     log('alvo ' + a.target + ' ' + outW + 'x' + outH + ' (' + a.mode + '), crop ' + [a.crop.x, a.crop.y, a.crop.w, a.crop.h].join(',') +
         ', fit ' + a.fit + '/' + a.scale + ', captura ' + a.capture + '(' + a.order + '), ' + a.fps + ' fps, gate ' + (a.gate ? 'on' : 'OFF') + (a.requireGuidance ? ' (só navegando)' : '') +
-        ', formato ' + (a.requireFormat ? 'Dashboard (meio>=' + a.fmt.tMap + '% células<=' + a.fmt.tCells + ')' : 'OFF'));
+        ', formato ' + (a.requireFormat ? 'Dashboard (meio>=' + a.fmt.tMap + '% células<=' + a.fmt.tCells + ')' : 'OFF') +
+        ', hold-last ' + (a.holdLast ? 'on' : 'OFF'));
     cr.connect();
 
     const ctlState = { masterEnabled: true };
     let hub = null;
-    const gate = a.gate ? startGate(a.gateInitial !== 'menu', log, (front, o) => { log('>> screenOwner=' + o + ' -> ' + (front ? 'MOSTRAR mapa' : 'ESCONDER (mapa stock volta)')); if (hub) hub.status(); })
-        : { front: true, ok: false };
+    let hold = { has: false, kind: null, buf: null, holding: false };
+    const gate = a.gate ? startGate(a.gateInitial !== 'menu', log, (front, o) => {
+        log('>> screenOwner=' + o + ' -> ' + (front ? 'CarPlay front' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
+        if (hub) hub.status();
+    }) : { front: true, ok: false };
     let fmtState = null; /* null = ainda não capturou; true = Dashboard; false = outro formato */
     function ctlStatus() {
         const fmtOk = !a.requireFormat || fmtState === true;
-        const mirror = ctlState.masterEnabled && gate.front && (!a.requireGuidance || gate.guidance !== false) && fmtOk;
-        return { ev: 'status', state: !ctlState.masterEnabled ? 'off' : (mirror ? 'on' : 'standby'),
-            mode: 'mirror', note: 'Dashboard map mirror only — not a CarPlay 2nd-stream patch',
-            enabled: ctlState.masterEnabled, carplay: !!gate.front, guidance: gate.guidance, format: fmtState };
+        const live = ctlState.masterEnabled && gate.front && (!a.requireGuidance || gate.guidance !== false) && fmtOk;
+        const holding = !!(a.holdLast && hold.has && ctlState.masterEnabled && !live);
+        const mirror = live || holding;
+        return { ev: 'status', state: !ctlState.masterEnabled ? 'off' : (live ? 'on' : (holding ? 'holding' : 'standby')),
+            mode: 'mirror', note: 'Dashboard map mirror; hold-last keeps a frozen map when you leave Dashboard',
+            enabled: ctlState.masterEnabled, carplay: !!gate.front, guidance: gate.guidance, format: fmtState,
+            holding: holding };
     }
-    hub = a.control ? startControl(a.ctlSock, ctlStatus, (cmd) => { if (cmd === 'enable') ctlState.masterEnabled = true; else if (cmd === 'disable') ctlState.masterEnabled = false; log('>> controle: ' + cmd); }, log) : null;
+    hub = a.control ? startControl(a.ctlSock, ctlStatus, (cmd) => {
+        if (cmd === 'enable') ctlState.masterEnabled = true;
+        else if (cmd === 'disable') {
+            ctlState.masterEnabled = false;
+            hold.has = false; hold.buf = null; hold.holding = false;
+        }
+        log('>> controle: ' + cmd);
+    }, log) : null;
 
     let stopped = false, frames = 0, t0 = Date.now(), shownState = null;
     function apply(want) {
         if (want && shownState !== true) { cr.set(ref, { visible: true }); shownState = true; }
         else if (!want && shownState !== false) { cr.set(ref, { visible: false }); shownState = false; }
     }
+    function pushHeld() {
+        if (!hold.has || !hold.buf) return;
+        apply(true);
+        try {
+            if (hold.kind === 'video') cr.frame(ref, hold.buf, frames);
+            else cr.pixels(ref, null, hold.buf);
+        } catch (e) { log('hold re-push failed: ' + e.message); }
+    }
+    function keepOrHide(why) {
+        if (a.holdLast && hold.has && ctlState.masterEnabled) {
+            if (!hold.holding) {
+                hold.holding = true;
+                log('>> hold last map (' + why + ')');
+                if (hub) hub.status();
+            }
+            pushHeld();
+            return true;
+        }
+        hold.holding = false;
+        apply(false);
+        return false;
+    }
     const endOnce = () => { stopped = true; cr.close(); process.exit(0); };
     function tick() {
         if (stopped) return;
-        /* base: ligado + CarPlay na frente (+ navegando, se exigido). Sem isso, nem captura. */
-        const base = ctlState.masterEnabled && gate.front && (!a.requireGuidance || gate.guidance !== false);
-        if (!base) { apply(false); setTimeout(tick, 400); return; }
+        if (!ctlState.masterEnabled) {
+            hold.has = false; hold.buf = null; hold.holding = false;
+            apply(false); setTimeout(tick, 400); return;
+        }
+        /* Live capture only while CarPlay is in front (+ guidance if required). */
+        const base = gate.front && (!a.requireGuidance || gate.guidance !== false);
+        if (!base) {
+            keepOrHide(gate.front ? 'guidance' : 'CarPlay not front');
+            setTimeout(tick, 400); return;
+        }
         const t = Date.now();
         grab(a, (err, img) => {
-            if (err) { log('captura falhou: ' + (err.message || err)); apply(false); if (a.once) return endOnce(); return setTimeout(tick, 500); }
-            /* gate de formato: só mostra no layout Dashboard (mapa à esq + cards cinza à dir) */
+            if (err) {
+                log('captura falhou: ' + (err.message || err));
+                keepOrHide('capture failed');
+                if (a.once) return endOnce();
+                return setTimeout(tick, 500);
+            }
+            /* Format gate: only *update* from Dashboard; otherwise hold last map. */
             if (a.requireFormat) {
                 const d = detectDashboard(img, a.fmt);
                 if (d.dashboard !== fmtState) {
                     fmtState = d.dashboard;
-                    log('>> formato ' + (d.dashboard ? 'Dashboard' : 'outro') + ' (meio ' + d.satMap.toFixed(1) + '% / células ' + d.cells + '/' + d.ncells + ') -> ' + (d.dashboard ? 'MOSTRAR mapa' : 'ESCONDER (mapa stock volta)'));
+                    log('>> formato ' + (d.dashboard ? 'Dashboard' : 'outro') + ' (meio ' + d.satMap.toFixed(1) + '% / células ' + d.cells + '/' + d.ncells + ') -> ' +
+                        (d.dashboard ? 'live map' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
                     if (hub) hub.status();
                 }
-                if (!d.dashboard) { apply(false); if (a.once) return endOnce(); return setTimeout(tick, a.fmtInterval); }
+                if (!d.dashboard) {
+                    keepOrHide('not Dashboard');
+                    if (a.once) return endOnce();
+                    return setTimeout(tick, a.fmtInterval);
+                }
             }
+            hold.holding = false;
             apply(true);
             try {
                 if (a.mode === 'video') {
                     const atlas = processToYUV(img, { outW: outW, outH: outH, crop: a.crop, fit: a.fit, scale: a.scale });
                     cr.frame(ref, atlas, frames); frames++;
+                    hold.has = true; hold.kind = 'video'; hold.buf = Buffer.from(atlas);
                     if (a.save && frames === 1) fs.writeFileSync(a.save, encodePNG(yuvAtlasToRGBA(atlas, outW, outH), outW, outH));
                 } else {
                     const o = processImage(img, { outW: outW, outH: outH, crop: a.crop, fit: a.fit, scale: a.scale });
                     cr.pixels(ref, null, o.rgba); frames++;
+                    hold.has = true; hold.kind = 'image'; hold.buf = Buffer.from(o.rgba);
                     if (a.save && frames === 1) fs.writeFileSync(a.save, encodePNG(o.rgba, outW, outH));
                 }
                 if (a.verbose || frames % Math.max(1, Math.round(a.fps * 10)) === 0)
