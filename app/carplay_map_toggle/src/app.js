@@ -6,9 +6,9 @@
  * no shell is needed.
  *
  * One LT_State_Wide page: a title, a status line and a single toggle button.
- *   - producer off          -> button "Ligar mapa no cluster"; a press enables
- *   - producer on/standby    -> button "Desligar";             a press disables
- *   - no producer connection -> status "Produtor offline", button disabled
+ *   - producer off          -> button "Turn on map on cluster"; a press enables
+ *   - producer on/standby/holding -> button "Turn off";        a press disables
+ *   - no producer connection -> status "Producer offline", button disabled
  *
  * The app connects the control socket while its page is visible and closes it
  * when the page is hidden or the app shuts down; the producer keeps running.

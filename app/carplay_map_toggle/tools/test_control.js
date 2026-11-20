@@ -58,15 +58,20 @@ function makeControl() {
 
     c._onMessage({ ev: 'status', state: 'off', enabled: false, carplay: false });
     assert.strictEqual(c.isOn(), false, 'off -> not on');
-    assert.strictEqual(c.toggleLabel(), 'Ligar mapa no cluster', 'off -> Ligar label');
+    assert.strictEqual(c.toggleLabel(), 'Turn on map on cluster', 'off -> Turn on label');
 
     c._onMessage({ ev: 'status', state: 'on', enabled: true, carplay: true });
     assert.strictEqual(c.isOn(), true, 'on -> on');
-    assert.strictEqual(c.toggleLabel(), 'Desligar', 'on -> Desligar label');
+    assert.strictEqual(c.toggleLabel(), 'Turn off', 'on -> Turn off label');
 
     c._onMessage({ ev: 'status', state: 'standby', enabled: true, carplay: false });
     assert.strictEqual(c.isOn(), true, 'standby -> on (enabled)');
-    assert.strictEqual(c.toggleLabel(), 'Desligar', 'standby -> Desligar label');
+    assert.strictEqual(c.toggleLabel(), 'Turn off', 'standby -> Turn off label');
+
+    c._onMessage({ ev: 'status', state: 'holding', enabled: true, carplay: true, holding: true });
+    assert.strictEqual(c.isOn(), true, 'holding -> on (enabled)');
+    assert.strictEqual(c.statusText(), 'On (holding last map)', 'holding status');
+    assert.strictEqual(c.toggleLabel(), 'Turn off', 'holding -> Turn off label');
 })();
 
 /* toggle() sends enable when off, disable when on/standby */
@@ -96,8 +101,8 @@ function makeControl() {
     c.ctl.emit('close');            // LineSocket drops -> control clears status
     assert.strictEqual(c.status, null, 'close clears status');
     c.ctl.link = 'absent';
-    assert.strictEqual(c.statusText(), 'Produtor offline', 'offline after close');
-    assert.strictEqual(c.toggleLabel(), 'Ligar mapa no cluster', 'label resets when offline');
+    assert.strictEqual(c.statusText(), 'Producer offline', 'offline after close');
+    assert.strictEqual(c.toggleLabel(), 'Turn on map on cluster', 'label resets when offline');
 })();
 
 console.log('test_control.js: all assertions passed');

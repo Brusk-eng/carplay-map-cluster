@@ -19,8 +19,8 @@
     {
       "id": "carplay_map_toggle",
       "kind": "app",
-      "title": "Mapa no Cluster",
-      "version": "0.1.0",
+      "title": "Map on cluster",
+      "version": "0.1.1",
       "path": "app/carplay_map_toggle",
       "build": "unit",
       "mguHmi": [

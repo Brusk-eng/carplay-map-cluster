@@ -1,6 +1,6 @@
 {
   "name": "carplay_map_toggle",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Toggle ON/OFF for mirroring the CarPlay centre screen onto the instrument cluster, driven from the iDrive HMI",
   "private": false,
   "main": "javascript/runner.js",

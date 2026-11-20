@@ -212,34 +212,36 @@ class MapToggleControl extends EventEmitter {
         if (typeof s.enabled === 'boolean') {
             return s.enabled;
         }
-        return s.state === 'on' || s.state === 'standby';
+        return s.state === 'on' || s.state === 'standby' || s.state === 'holding';
     }
 
     /* ---- rendering ---- */
     toggleLabel() {
-        return this.isOn() ? 'Desligar' : 'Ligar mapa no cluster';
+        return this.isOn() ? 'Turn off' : 'Turn on map on cluster';
     }
 
     statusText() {
         if (this.ctl.link === 'down') {
-            return 'Conectando…';
+            return 'Connecting…';
         }
         if (!this.connected()) {
-            return 'Produtor offline';
+            return 'Producer offline';
         }
         const s = this.status;
         if (!s) {
-            return 'Conectando…';
+            return 'Connecting…';
         }
         switch (s.state) {
         case 'on':
-            return 'Ligado (espelhando)';
+            return 'On (mirroring)';
+        case 'holding':
+            return 'On (holding last map)';
         case 'standby':
-            return 'Ligado — aguardando CarPlay';
+            return 'On — waiting for CarPlay';
         case 'off':
-            return 'Desligado';
+            return 'Off';
         default:
-            return s.state ? `Estado: ${s.state}` : 'Conectando…';
+            return s.state ? `State: ${s.state}` : 'Connecting…';
         }
     }
 

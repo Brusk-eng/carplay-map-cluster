@@ -5,7 +5,7 @@ Mirrors the **CarPlay Dashboard map** onto the BMW **iDrive 7 / MGU** instrument
 | | |
 |---|---|
 | Tool | `carplay-map` **0.2.4** |
-| Toggle app | `carplay_map_toggle` **0.1.0** (“Mapa no Cluster”) |
+| Toggle app | `carplay_map_toggle` **0.1.1** (“Map on cluster”) |
 | Catalog | `mgu-repo.json` (MGU Store **Add source** works) |
 | Repo | [Brusk-eng/carplay-map-cluster](https://github.com/Brusk-eng/carplay-map-cluster) |
 
@@ -75,7 +75,7 @@ This tool **blocks** if `/var/opt/waze-on-cluster/current` exists:
 2. Store → Settings → **+ Add source** → `Brusk-eng/carplay-map-cluster` → branch **main**  
 3. Install **cluster-render** (if missing) and **app-privacy**  
 4. Install **CarPlay map → cluster** (`carplay-map` **0.2.4**)  
-5. Install **Mapa no Cluster** (`carplay_map_toggle`)  
+5. Install **Map on cluster** (`carplay_map_toggle`)  
 6. Connect iPhone CarPlay → open a map in **Dashboard** layout (map left + cards right)  
 7. Look at the instrument cluster  
 
@@ -99,7 +99,7 @@ The script refuses if `waze-on-cluster` is current, packs the tool with correct 
 - CarPlay must stay **visible** (BMW menu in front → nothing to capture → blank)  
 - Use **Dashboard** map layout (fullscreen map is gated off on purpose)
 - **Hold last map** (default): leave Dashboard (e.g. Spotify) → cluster keeps a **frozen** last map until Dashboard returns; toggle Off clears it  
-- Toggle with **Mapa no Cluster**; service auto-starts on boot (`--gate-initial menu`)  
+- Toggle with **Map on cluster**; service auto-starts on boot (`--gate-initial menu`)  
 - If crop/detection looks wrong on your CarPlay build, calibrate on the unit:
 
 ```sh

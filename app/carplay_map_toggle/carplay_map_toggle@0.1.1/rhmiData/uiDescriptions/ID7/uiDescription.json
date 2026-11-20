@@ -39,7 +39,7 @@
           "rows": [
             {
               "Text": {
-                "value": "Conectando…",
+                "value": "Connecting…",
                 "type": "Text"
               }
             }
@@ -61,7 +61,7 @@
           "rows": [
             {
               "Text": {
-                "value": "Ligar mapa no cluster",
+                "value": "Turn on map on cluster",
                 "type": "Text"
               }
             }

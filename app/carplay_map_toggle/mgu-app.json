@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "id": "carplay_map_toggle",
-  "version": "0.1.0",
-  "tree": "carplay_map_toggle@0.1.0",
+  "version": "0.1.1",
+  "tree": "carplay_map_toggle@0.1.1",
   "modules": [
     "src/app.js",
     "src/control.js"
