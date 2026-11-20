@@ -9,9 +9,11 @@ Mirrors the **CarPlay Dashboard map** onto the BMW **iDrive 7 / MGU** instrument
 | Catalog | `mgu-repo.json` (MGU Store **Add source** works) |
 | Repo | [Brusk-eng/carplay-map-cluster](https://github.com/Brusk-eng/carplay-map-cluster) |
 
-![Demo](docs/demo.webp)
+![Cluster map](docs/demo-cluster.jpg)
 
-*Mirror of CarPlay’s map on the cluster (left) while Dashboard stays on the center screen (right).*
+![Cluster + CarPlay Dashboard](docs/demo-dashboard.jpg)
+
+*CarPlay Dashboard map mirrored onto the instrument cluster (same night, same route).*
 
 > This is a **screen copy**, not a second CarPlay video stream. It will not feel like patched CarPlay 21/22.
 
