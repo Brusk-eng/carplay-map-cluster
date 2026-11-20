@@ -121,7 +121,7 @@ app/carplay_map_toggle/       on/off OAP app (build: unit)
 install/install.sh            SSH installer
 producer/                     same producer script (legacy / quick test)
 packages/carplay-map-tool/    legacy package metadata for install.sh
-docs/demo.webp                demo image
+docs/demo-*.jpg               in-car demo photos (plates redacted)
 ```
 
 ---
