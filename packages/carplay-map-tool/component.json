@@ -1,7 +1,7 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "title": "CarPlay no cluster (produtor)",
   "description": "Captura o mapa do CarPlay da central e alimenta o cluster-render; ligado/desligado pelo app Mapa no Cluster. Prefer native/carplay-map for MGU Store.",
   "files": [

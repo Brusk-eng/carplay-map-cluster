@@ -5,7 +5,7 @@
  *
  * One Unix stream socket (CTL_PATH), newline-delimited JSON, one object per
  * line, reconnecting every second while the page is visible. The producer
- * (/var/opt/carplay-map/carplay-map-cluster.js) keeps running when the app
+ * (/var/opt/carplay-map/current/carplay-map-cluster.js) keeps running when the app
  * closes it.
  *
  *   app      -> producer   {"cmd":"status"} | {"cmd":"enable"} | {"cmd":"disable"}

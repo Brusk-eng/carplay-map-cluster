@@ -268,10 +268,26 @@ function yuvAtlasToRGBA(atlas, vw, vh) {
 }
 
 /* ---------------------------------------------------------------- gate CarPlay (SOME/IP) */
+/* If the screen gate cannot start while initialFront is false (--gate-initial menu),
+ * leave front=false forever and the mirror never runs. Fall back to front=true and
+ * rely on the Dashboard format detector (and stock UI rejection) instead. */
+function openGateWithoutScreenOwner(state, log, onChange, why) {
+    state.ok = false;
+    if (!state.front) {
+        state.front = true;
+        log('gate unavailable (' + why + ') — allowing capture; Dashboard format gate still applies');
+        try { onChange(true, 'gate-fallback'); } catch (e) {}
+    } else {
+        log('gate unavailable (' + why + ') — continuing with front=true');
+    }
+}
 function startGate(initialFront, log, onChange) {
     const state = { front: initialFront, guidance: null, ok: false };
     let someip;
-    try { someip = require(SOMEIP_NODE); } catch (e) { log('gate OFF (sem someip.node): ' + e.message); return state; }
+    try { someip = require(SOMEIP_NODE); } catch (e) {
+        openGateWithoutScreenOwner(state, log, onChange, 'no someip.node: ' + e.message);
+        return state;
+    }
     const CPM = {
         name: 'CarPlayManager', serviceId: 64353, version: { major: 0, minor: 5 },
         instances: { CarPlayManagerInst1: 128 }, methods: {},
@@ -293,7 +309,7 @@ function startGate(initialFront, log, onChange) {
         }});
         p.subscribe({ name: 'projectedGuidanceActive', onReceive: (v) => setGuidance((v && typeof v === 'object') ? v.projectedGuidanceActive : v) });
         if (p.getValue) { p.getValue('projectedGuidanceActive').then((v) => setGuidance(v)).catch(() => {}); }
-    })).catch((e) => log('gate falhou (seguindo sem gate): ' + (e && e.message || e)));
+    })).catch((e) => openGateWithoutScreenOwner(state, log, onChange, e && e.message || e));
     return state;
 }
 
@@ -445,13 +461,25 @@ function main() {
         var lastErr = null;
         for (var i = 0; i < candidates.length; i++) {
             try {
-                ClusterRender = require(candidates[i]).ClusterRender;
+                if (!fs.existsSync(candidates[i])) continue;
+                var mod = require(candidates[i]);
+                if (!mod || typeof mod.ClusterRender !== 'function') {
+                    lastErr = new Error(candidates[i] + ' has no ClusterRender export');
+                    continue;
+                }
+                ClusterRender = mod.ClusterRender;
+                log('cluster_render_client: ' + candidates[i]);
                 return;
             } catch (e) { lastErr = e; }
         }
         throw new Error('cluster_render_client.js not found (install cluster-render from MGU Store). Last: ' +
             (lastErr && lastErr.message || lastErr));
     })();
+    try {
+        if (fs.existsSync('/var/opt/waze-on-cluster/current') || fs.existsSync('/run/waze-on-cluster')) {
+            log('AVISO: waze-on-cluster parece instalado — ambos disputam o slot do mapa; desligue o patch/app dele se a imagem piscar ou sumir');
+        }
+    } catch (e) {}
     const cr = new ClusterRender('carplay_map_shot', a.socket);
     cr.on('ready', () => log('cluster-render ready: backend ' + cr.backend + ', targets ' + cr.targets));
     cr.on('disconnected', () => log('desconectado do cluster-render'));
