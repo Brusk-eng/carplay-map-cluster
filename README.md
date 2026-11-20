@@ -1,131 +1,136 @@
-# CarPlay map → instrument cluster (capture-based) — iDrive7 MGU
+# CarPlay map → instrument cluster (Store-ready fork)
 
-**Store fork note:** this tree includes `mgu-repo.json` + `native/carplay-map/` so MGU Store **Add source** works. Upstream `isaakbruno2/carplay-map-cluster` has neither — Add source shows `no mgu-repo.json`. Install **cluster-render** first; optional **app-privacy** for the on/off app. Then add *your published fork* as `owner/repo` → install **CarPlay map → cluster**, then **Mapa no Cluster**.
+Mirrors the **CarPlay Dashboard map** onto the BMW **iDrive 7 / MGU** instrument cluster **without** patching `/usr/bin/carplay`.
 
-Puts the **CarPlay map** (Waze / Google Maps / Apple Maps) onto the **instrument
-cluster** of a BMW iDrive7 MGU, on CarPlay builds that the
-[`waze-on-cluster`](https://github.com/robertnisipeanu/idrive-apps) patch refuses —
-e.g. CarPlay **`0.20.20`**, firmware `G_20w28.3`, MainApp 7.1.2, `carplay` sha
-`8ae226…`. **No patch, no firmware update, no modified BMW binaries.**
+| | |
+|---|---|
+| Tool | `carplay-map` **0.2.4** |
+| Toggle app | `carplay_map_toggle` **0.1.0** (“Mapa no Cluster”) |
+| Catalog | `mgu-repo.json` (MGU Store **Add source** works) |
+| Upstream idea | [isaakbruno2/carplay-map-cluster](https://github.com/isaakbruno2/carplay-map-cluster) |
+| This fork | [Brusk-eng/carplay-map-cluster](https://github.com/Brusk-eng/carplay-map-cluster) |
 
-![Waze map mirrored onto the BMW instrument cluster while CarPlay runs on the central screen](docs/demo.webp)
+![Demo](docs/demo.webp)
 
-*CarPlay's Waze map running on the instrument cluster (left) while CarPlay's Dashboard is on the central screen (right) — BMW G20, CarPlay 0.20.20.*
+*Mirror of CarPlay’s map on the cluster (left) while Dashboard stays on the center screen (right). Upstream demo: G20, CarPlay 0.20.20.*
 
-> It's a pragmatic *mirror*, not a second video stream. Read **"What it is (and isn't)"**
-> and **"Limitations"** before expecting it to behave like the real thing.
+> This is a **screen copy**, not Robert’s second video stream. It will not feel like patched CarPlay 21/22.
 
 ---
 
-## What it is (and isn't)
+## Why this fork exists
 
-The `waze-on-cluster` patch asks CarPlay for a **second, independent video stream** for
-the cluster. That machinery (`AlternateDisplays`, `requestStream`, …) **isn't present in
-CarPlay 0.20.20** — confirmed from the `carplay` binary *and* its SOME/IP interface — so
-no patch can unlock it on this build.
+Upstream `isaakbruno2/carplay-map-cluster` has **no** `mgu-repo.json`, so MGU Store shows:
 
-This takes a different route: it **captures the central display** (where CarPlay is
-already drawing the map), crops the map region, and paints it into the cluster map slot
-via robertn's **`cluster-render`**, ~6 fps. It's a live **copy** of the map you're already
-looking at on the big screen.
+`no mgu-repo.json` → **0 components**
 
-- **Format gate:** it only mirrors when CarPlay is in the **Dashboard** layout (map on the
-  left + the two side cards). It does **not** mirror a fullscreen map, and not non-map
-  screens (home / music / phone). It decides this from the frame itself (colour + layout
-  structure), so it keeps working regardless of music, album art, or map zoom.
-- **In-car on/off app** ("Mapa no Cluster") toggles it without SSH.
-- **Auto-starts on boot** (packaged as an `mgu-deploy` tool).
-- **Reversible & non-invasive:** kill the process → the stock cluster returns. Touches no
-  BMW binary and no HDCP.
+This repo adds a Store catalog + `native/carplay-map/` tool layout, loads `cluster_render_client.js` from the installed **cluster-render** package (not redistributed), and **refuses** to install/run beside `waze-on-cluster`.
 
-## Who this is for
+---
 
-iDrive7 **MGU** (high cluster, `kombi/high_4_1`), rooted, with **MGU Store** working.
-Tested on a BMW G20 320i (2020, `G_20w28.3`, CarPlay `0.20.20`). Same unit as the one in
-[idrive-apps#8](https://github.com/robertnisipeanu/idrive-apps/issues/8).
+## What it is (and isn’t)
 
-## Prerequisites (on the unit)
+**Robert’s `waze-on-cluster`** patches CarPlay so the phone opens an **alternate-display** stream to the cluster. That needs a patchable CarPlay build (proven **21.27.4** / **22.28.3**). On older builds (e.g. **0.20.20**, **20.40.2**) probe says `patchable: no`.
 
-1. **`cluster-render`** installed and running (from **MGU Store**) — the DCSM2/RAMSES
-   engine that owns the cluster map slot (`0x100`, 1088×480). **This does the hard part.**
-2. **`app-privacy`** (from MGU Store) — only needed for the in-car on/off app.
-3. **Node** (`/usr/bin/node`), **`winston-grabber`**, **`someip.node`** — already on the MGU.
-4. **root SSH** on the unit.
+**This tool** instead:
 
-`cluster_render_client.js` is part of `cluster-render` (robertn's, GPL-3.0) and is **not**
-redistributed here — the installer takes it from your `cluster-render` package.
+1. Captures the **center** screen with stock `winston-grabber`
+2. Crops the map region
+3. Pushes frames into Robert’s **`cluster-render`** (~3–6 fps)
 
-## Install (turnkey)
+| | This fork (`carplay-map`) | Robert (`waze-on-cluster`) |
+|---|---|---|
+| Touches `/usr/bin/carplay` | No | Yes |
+| Needs patchable CarPlay | No | Yes |
+| Quality | Mirror / low fps | Native 2nd stream |
+| Layout | **Dashboard only** | Full cluster map path |
+| Same map slot | Yes — **do not install both** | Yes |
 
-On your PC, copy this repo to the unit (or `git clone` it there), then run the installer
-on the unit as root:
+---
+
+## Conflict with `waze-on-cluster`
+
+These are **different** products that fight the same cluster map slot.
+
+This fork **blocks** if `/var/opt/waze-on-cluster/current` exists:
+
+- SSH `install/install.sh`
+- Store **activate** (`check-conflict.js` → install rolls back)
+- Runtime (producer exits)
+
+**Uninstall `waze-on-cluster` first**, then install this.
+
+---
+
+## Prerequisites
+
+1. Rooted iDrive 7 **MGU** + working **MGU Store**
+2. **`cluster-render`** installed (does the hard cluster drawing)
+3. **`app-privacy`** — required for the on/off app only
+4. Stock HU tools: `node`, `winston-grabber`, Wayland (`wayland-0`)
+5. Car internet (or phone hotspot) for Store GitHub sources
+
+---
+
+## Install via MGU Store (preferred)
+
+1. Uninstall **waze-on-cluster** (and its Maps-on-cluster app) if present  
+2. Store → Settings → **+ Add source** → `Brusk-eng/carplay-map-cluster` → branch **main**  
+3. Install **cluster-render** (if missing) and **app-privacy**  
+4. Install **CarPlay map → cluster** (`carplay-map` **0.2.4**)  
+5. Install **Mapa no Cluster** (`carplay_map_toggle`)  
+6. Connect iPhone CarPlay → open a map in **Dashboard** layout (map left + cards right)  
+7. Look at the instrument cluster  
+
+Remove the broken upstream source `isaakbruno2/carplay-map-cluster` if you added it earlier.
+
+---
+
+## Install via SSH (optional)
 
 ```sh
-# on the unit, repo root:
+# on the unit, as root, repo root:
 chmod +x install/install.sh
-# point it at cluster_render_client.js from your cluster-render package
-# (tar xzf cluster-render@*.tgz  -> files/cluster_render_client.js):
-./install/install.sh /path/to/cluster_render_client.js
+./install/install.sh
+# optional: ./install/install.sh /path/to/cluster_render_client.js
 ```
 
-The installer checks prereqs, builds the `mgu-deploy` tool package (recomputing checksums),
-installs the **producer** + the **on/off app**, and starts it. Open CarPlay on a map
-(Dashboard layout) and the cluster lights up.
+The script refuses if `waze-on-cluster` is current, packs the tool with correct file hashes, installs via `mgu-deploy`, then tries the toggle app.
 
-## Manual run (quick test, no install)
+---
+
+## Using it
+
+- CarPlay must stay **visible** (BMW menu in front → nothing to capture → blank)  
+- Use **Dashboard** map layout (fullscreen map is gated off on purpose)  
+- Toggle with **Mapa no Cluster**; service auto-starts on boot (`--gate-initial menu`)  
+- If crop/detection looks wrong on your CarPlay build, calibrate on the unit:
 
 ```sh
-# as root, on the unit, in producer/ (with cluster_render_client.js alongside):
 WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/wayland \
-  node carplay-map-cluster.js --fps 6 --gate-initial menu --verbose
+  node /var/opt/carplay-map/current/carplay-map-cluster.js --calibrate --verbose
 ```
 
-## Options / tuning
-
-- `--calibrate` — grab one frame, print the format numbers + verdict (to tune the gate on
-  your unit).
-- `--no-require-format` — disable the format gate (mirror any CarPlay screen).
-- `--fmt-th SAT,TMAP,TCELLS`, `--fmt-map x0,y0,x1,y1`, `--fmt-right x0,y0,x1,y1` — gate
-  thresholds / regions (fractions 0..1).
-- `--crop X,Y,W,H` — map region of the 1920×720 capture (default `160,0,1020,720`).
-- `--fps N`, `--mode video|image`, `--no-gate`, `--once`, `--infile X.png` (offline test).
-  See the header of [`producer/carplay-map-cluster.js`](producer/carplay-map-cluster.js)
-  for the full list.
-
-## How the format gate works
-
-The Dashboard is the only CarPlay screen with a **colourful map on the left** and a
-**column of UI cards on the right**. The detector measures: (1) the middle is colourful
-(= a map), and (2) the colour on the right is **concentrated** (an album-art thumbnail),
-not **spread** (a map filling the right). A fullscreen map spreads colour across the whole
-right; a no-map screen has no colour in the middle. Tunable via `--fmt-th`.
-
-## Limitations (honest)
-
-- **CarPlay minimized** (BMW menu in front): nothing to capture — the phone stops
-  projecting and the only readable surface becomes the BMW UI, so the map can't show then.
-  The 2nd-stream / virtual-display path that would fix this isn't in `0.20.20` (verified
-  from the binary + its SOME/IP interface — a single projected screen only).
-- **Fullscreen map**: intentionally not mirrored. A fullscreen view whose right side is
-  very dark/empty can occasionally slip through the gate; tune `--fmt-th` or toggle off.
-- **fps**: ~6 (the cluster link's upload budget is ~6 MB/s; 8 fps flashed the cluster
-  black). Continuous capture could reach ~8 — not implemented here.
+---
 
 ## Repo layout
 
 ```
-producer/   carplay-map-cluster.js   the capture→cluster producer (Node, MPL-2.0)
-app/        carplay_map_toggle/      in-car on/off app (OAP app, needs app-privacy)
-packages/   carplay-map-tool/        mgu-deploy tool template (component.json + unit)
-install/    install.sh               builds the tool package and installs everything
+mgu-repo.json                 Store catalog
+native/carplay-map/           tool (producer + systemd + activate conflict check)
+app/carplay_map_toggle/       on/off OAP app (build: unit)
+install/install.sh            SSH installer
+producer/                     same producer script (legacy / quick test)
+packages/carplay-map-tool/    legacy package metadata for install.sh
+docs/demo.webp                demo image
 ```
+
+---
 
 ## Credits & license
 
-The heavy lifting — DCSM2, RAMSES, the cluster slot — is **robertn's
-[`cluster-render`](https://github.com/robertnisipeanu/idrive-apps)** (MGU Store). This repo
-is glue around it. Huge thanks to robertn and the idrive-apps / mgu-store community.
+- Capture→cluster idea and original code: **[isaakbruno2/carplay-map-cluster](https://github.com/isaakbruno2/carplay-map-cluster)** (MPL-2.0 / app GPL as marked)
+- Cluster drawing: **robertn** [`cluster-render`](https://github.com/robertnisipeanu/idrive-apps) / [MGU Store](https://github.com/robertnisipeanu/mgu-store) (GPL — client loaded from the installed package, not vendored here)
+- This fork: Store packaging, conflict guards, runtime client path — [Brusk-eng/carplay-map-cluster](https://github.com/Brusk-eng/carplay-map-cluster)
 
-Our code (the producer and the app) is **MPL-2.0**. `cluster-render` and its
-`cluster_render_client.js` are **GPL-3.0-or-later** (robertn's) and are **not** included
-here — install them from MGU Store. See [`LICENSE`](LICENSE).
+See [LICENSE](LICENSE).
