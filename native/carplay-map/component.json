@@ -1,9 +1,9 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.9",
+  "version": "0.2.8",
   "title": "CarPlay map \u2192 cluster",
-  "description": "Mirrors CarPlay Dashboard map apps only (Maps/Waze). Rejects Spotify/media/settings via album-art detection; holds last map. Free-drive crop keeps me-arrow; nav crop clips ETA for look-ahead. Refuses if waze-on-cluster is installed.",
+  "description": "Mirrors CarPlay Dashboard map to the cluster. Free-drive crop keeps the blue me-arrow; nav crop clips the ETA strip so far-ahead stays visible. Holds last map when leaving Dashboard. Refuses if waze-on-cluster is installed.",
   "mguHmi": [
     "ID7"
   ],

@@ -50,7 +50,6 @@
  *   --fmt-right X0,Y0,X1,Y1 região "cards" em frações 0..1 (padrão .645,.06,.985,.95)
  *   --fmt-th SAT,TMAP,TCELLS limiares: sat/pixel, meio>=TMAP%, nº células dir<=TCELLS (padrão 40,5,7)
  *   --fmt-cells COLS,ROWS,CELLTH grade da direita e limiar de célula colorida (padrão 4,4,15)
- *   --fmt-art TART[,ARTSAT,ARTMAD] reject album-art tiles in map pane (padrão 3,35,22)
  *   --calibrate       captura 1 quadro, imprime sat meio/dir + veredito e sai
  *   --infile PATH     OFFLINE: lê PNG (ou .rgb c/ --cap-size), processa e sai
  *   --save PATH       grava o RGBA processado como PNG (debug/preview)
@@ -172,15 +171,14 @@ function processImage(img, opts) {
 }
 
 /* ---------------------------------------------------------------- detector de formato (Dashboard do CarPlay) */
-/* Dashboard = mapa COLORIDO à esquerda + coluna de cards à direita. Três testes:
+/* Dashboard = mapa COLORIDO à esquerda + coluna de cards à direita. Dois testes:
  *  1) MEIO (mapa) colorido: % de pixels saturados (|max-min|>satTh) >= tMap.
  *  2) DIREITA não é mapa: a cor na direita tem que estar CONCENTRADA, não espalhada.
  *     Divide a coluna direita numa grade cols×rows; conta células "coloridas"
  *     (sat% > cellTh). Mapa em tela cheia espalha cor por ~todas as células (12-13/16);
  *     card de música concentra a capa em 1-2 células. Exige nº de células <= tCells.
- *  3) MEIO não é Spotify/mídia: album art = flat high-chroma tiles. Count map-region
- *     cells that are both saturated and low-variance; reject if artCells >= tArt.
- * Medido no carro: Dash 0-2 células dir, tela cheia 12-13. Ordem rgba/bgra ok p/ max-min. */
+ * Medido no carro: Dash 0-2 células, tela cheia 12-13 (margem grande). Robusto a
+ * música/capa, mapa sem rota e zoom. Ordem de canais (rgba/bgra) não importa p/ max-min. */
 function satPct(img, x0, y0, x1, y1, satTh, step) {
     const X0 = (x0 * img.width) | 0, Y0 = (y0 * img.height) | 0, X1 = (x1 * img.width) | 0, Y1 = (y1 * img.height) | 0;
     const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
@@ -194,26 +192,6 @@ function satPct(img, x0, y0, x1, y1, satTh, step) {
     }
     return n ? 100 * sat / n : 0;
 }
-/* sat% + mean absolute luma deviation (flat album tiles = high sat, low mad). */
-function cellStats(img, x0, y0, x1, y1, satTh, step) {
-    const X0 = (x0 * img.width) | 0, Y0 = (y0 * img.height) | 0, X1 = (x1 * img.width) | 0, Y1 = (y1 * img.height) | 0;
-    const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
-    const px = [0, 0, 0]; let sat = 0, n = 0, sumY = 0;
-    const ys = [];
-    for (let y = Y0; y < Y1; y += sy) for (let x = X0; x < X1; x += sx) {
-        readRGB(img, x, y, px);
-        const mx = px[0] > px[1] ? (px[0] > px[2] ? px[0] : px[2]) : (px[1] > px[2] ? px[1] : px[2]);
-        const mn = px[0] < px[1] ? (px[0] < px[2] ? px[0] : px[2]) : (px[1] < px[2] ? px[1] : px[2]);
-        if (mx - mn > satTh) sat++;
-        const Y = (0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2]);
-        sumY += Y; ys.push(Y); n++;
-    }
-    if (!n) return { sat: 0, mad: 0 };
-    const mean = sumY / n;
-    let mad = 0;
-    for (let i = 0; i < ys.length; i++) mad += Math.abs(ys[i] - mean);
-    return { sat: 100 * sat / n, mad: mad / n };
-}
 /* nº de células da coluna direita (grade cols×rows) com sat% acima de cellTh */
 function rightCells(img, f) {
     let nc = 0;
@@ -224,26 +202,10 @@ function rightCells(img, f) {
     }
     return nc;
 }
-/* Flat high-chroma tiles in the map pane = Spotify/media, not Maps/Waze. */
-function artCells(img, f) {
-    let nc = 0;
-    const artSat = f.artSat != null ? f.artSat : 35;
-    const artMad = f.artMad != null ? f.artMad : 22;
-    for (let cx = 0; cx < f.cols; cx++) for (let cy = 0; cy < f.rows; cy++) {
-        const ax = f.mapX0 + (f.mapX1 - f.mapX0) * cx / f.cols, bx = f.mapX0 + (f.mapX1 - f.mapX0) * (cx + 1) / f.cols;
-        const ay = f.mapY0 + (f.mapY1 - f.mapY0) * cy / f.rows, by = f.mapY0 + (f.mapY1 - f.mapY0) * (cy + 1) / f.rows;
-        const st = cellStats(img, ax, ay, bx, by, f.satTh, f.step);
-        if (st.sat > artSat && st.mad < artMad) nc++;
-    }
-    return nc;
-}
 function detectDashboard(img, f) {
     const satMap = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.satTh, f.step);
     const cells = rightCells(img, f);
-    const art = artCells(img, f);
-    const tArt = f.tArt != null ? f.tArt : 3;
-    const ok = satMap >= f.tMap && cells <= f.tCells && art < tArt;
-    return { dashboard: ok, satMap: satMap, cells: cells, art: art, tArt: tArt, ncells: f.cols * f.rows };
+    return { dashboard: satMap >= f.tMap && cells <= f.tCells, satMap: satMap, cells: cells, ncells: f.cols * f.rows };
 }
 /* img (rgb/rgba/bgra) -> RGBA reto (p/ salvar com encodePNG em --calibrate/debug) */
 function toRGBA(img) {
@@ -417,7 +379,7 @@ function parseArgs(argv) {
         capTool: '', screen: 'center', tmp: '', capW: 1920, capH: 720,
         control: true, ctlSock: '/dev/shm/carplay-map/ctl.sock', requireGuidance: false,
         requireFormat: true, holdLast: true, calibrate: false,
-        fmt: { mapX0: 0.10, mapY0: 0.12, mapX1: 0.58, mapY1: 0.88, rX0: 0.645, rY0: 0.06, rX1: 0.985, rY1: 0.95, satTh: 40, tMap: 5, tCells: 7, cellTh: 15, cols: 4, rows: 4, step: 70, tArt: 3, artSat: 35, artMad: 22 },
+        fmt: { mapX0: 0.10, mapY0: 0.12, mapX1: 0.58, mapY1: 0.88, rX0: 0.645, rY0: 0.06, rX1: 0.985, rY1: 0.95, satTh: 40, tMap: 5, tCells: 7, cellTh: 15, cols: 4, rows: 4, step: 70 },
         contend: true, once: false, infile: '', save: '', verbose: false };
     for (let i = 0; i < argv.length; i++) {
         const k = argv[i];
@@ -452,7 +414,6 @@ function parseArgs(argv) {
         else if (k === '--fmt-right') { const m = (argv[++i] || '').split(','); a.fmt.rX0 = +m[0]; a.fmt.rY0 = +m[1]; a.fmt.rX1 = +m[2]; a.fmt.rY1 = +m[3]; }
         else if (k === '--fmt-th') { const m = (argv[++i] || '').split(','); a.fmt.satTh = +m[0]; a.fmt.tMap = +m[1]; a.fmt.tCells = +m[2]; }
         else if (k === '--fmt-cells') { const m = (argv[++i] || '').split(','); a.fmt.cols = +m[0]; a.fmt.rows = +m[1]; a.fmt.cellTh = +m[2]; }
-        else if (k === '--fmt-art') { const m = (argv[++i] || '').split(','); a.fmt.tArt = +m[0]; if (m[1] != null) a.fmt.artSat = +m[1]; if (m[2] != null) a.fmt.artMad = +m[2]; }
         else if (k === '--calibrate') a.calibrate = true;
         else if (k === '--once') a.once = true;
         else if (k === '--infile') a.infile = argv[++i];
@@ -473,8 +434,7 @@ function runOffline(a, outW, outH) {
     const img = /\.png$/i.test(a.infile) ? decodePNG(buf) : readRaw(buf, a.capW, a.capH, a.order);
     log('offline: ' + img.width + 'x' + img.height + ' (' + (img.bgr ? 'bgra' : 'rgb/rgba') + ', modo ' + a.mode + ') de ' + a.infile);
     const df = detectDashboard(img, a.fmt);
-    log('offline formato: satMeio=' + df.satMap.toFixed(1) + '% células=' + df.cells + '/' + df.ncells +
-        ' art=' + df.art + '/<' + df.tArt + ' -> ' + (df.dashboard ? 'MAP (mirror)' : 'NOT-map (hold/hide)'));
+    log('offline formato: satMeio=' + df.satMap.toFixed(1) + '% células=' + df.cells + '/' + df.ncells + ' (satTh=' + a.fmt.satTh + ', tMap=' + a.fmt.tMap + ' tCells=' + a.fmt.tCells + ') -> ' + (df.dashboard ? 'DASHBOARD (espelha)' : 'NÃO-dashboard (esconde)'));
     let rgba;
     if (a.mode === 'video') rgba = yuvAtlasToRGBA(processToYUV(img, { outW: outW, outH: outH, crop: a.crop, fit: a.fit, scale: a.scale }), outW, outH);
     else rgba = processImage(img, { outW: outW, outH: outH, crop: a.crop, fit: a.fit, scale: a.scale }).rgba;
@@ -493,9 +453,8 @@ function main() {
         grab(a, (err, img) => {
             if (err) { console.error('captura falhou: ' + (err.message || err)); process.exit(1); }
             const d = detectDashboard(img, a.fmt);
-            log('CALIBRATE ' + img.width + 'x' + img.height + ': satMeio=' + d.satMap.toFixed(1) + '% rightCells=' + d.cells + '/' + d.ncells +
-                ' artCells=' + d.art + ' (tArt=' + d.tArt + ')');
-            log('thresholds: map>=' + a.fmt.tMap + '%  right<=' + a.fmt.tCells + '  art<' + d.tArt + '  ->  ' + (d.dashboard ? 'MAP (would mirror)' : 'NOT-map (hold/hide)'));
+            log('CALIBRAÇÃO ' + img.width + 'x' + img.height + ': satMeio=' + d.satMap.toFixed(1) + '% células=' + d.cells + '/' + d.ncells + ' (satTh=' + a.fmt.satTh + ', cellTh=' + a.fmt.cellTh + ')');
+            log('limiares: meio>=' + a.fmt.tMap + '%  células<=' + a.fmt.tCells + '  ->  ' + (d.dashboard ? 'DASHBOARD (espelharia)' : 'NÃO-dashboard (esconderia)'));
             if (a.save) { try { fs.writeFileSync(a.save, encodePNG(toRGBA(img), img.width, img.height)); log('frame salvo em ' + a.save); } catch (e) { log('save falhou: ' + e.message); } }
             process.exit(0);
         });
@@ -549,7 +508,7 @@ function main() {
     log('alvo ' + a.target + ' ' + outW + 'x' + outH + ' (' + a.mode + '), crop-free ' + [a.crop.x, a.crop.y, a.crop.w, a.crop.h].join(',') +
         ', crop-nav ' + [a.cropNav.x, a.cropNav.y, a.cropNav.w, a.cropNav.h].join(',') +
         ', fit ' + a.fit + '/' + a.scale + ', captura ' + a.capture + '(' + a.order + '), ' + a.fps + ' fps, gate ' + (a.gate ? 'on' : 'OFF') + (a.requireGuidance ? ' (só navegando)' : '') +
-        ', formato ' + (a.requireFormat ? 'map-only (meio>=' + a.fmt.tMap + '% right<=' + a.fmt.tCells + ' art<' + a.fmt.tArt + ')' : 'OFF') +
+        ', formato ' + (a.requireFormat ? 'Dashboard (meio>=' + a.fmt.tMap + '% células<=' + a.fmt.tCells + ')' : 'OFF') +
         ', hold-last ' + (a.holdLast ? 'on' : 'OFF'));
     cr.connect();
 
@@ -637,13 +596,12 @@ function main() {
                 const d = detectDashboard(img, a.fmt);
                 if (d.dashboard !== fmtState) {
                     fmtState = d.dashboard;
-                    log('>> formato ' + (d.dashboard ? 'map' : 'not-map') + ' (meio ' + d.satMap.toFixed(1) + '% / right ' + d.cells + '/' + d.ncells +
-                        ' / art ' + d.art + ') -> ' +
+                    log('>> formato ' + (d.dashboard ? 'Dashboard' : 'outro') + ' (meio ' + d.satMap.toFixed(1) + '% / células ' + d.cells + '/' + d.ncells + ') -> ' +
                         (d.dashboard ? 'live map' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
                     if (hub) hub.status();
                 }
                 if (!d.dashboard) {
-                    keepOrHide('not map (Spotify/settings/other)');
+                    keepOrHide('not Dashboard');
                     if (a.once) return endOnce();
                     return setTimeout(tick, a.fmtInterval);
                 }
