@@ -1,0 +1,33 @@
+{
+  "id": "carplay-map",
+  "kind": "tool",
+  "version": "0.2.1",
+  "title": "CarPlay map → cluster",
+  "description": "Mirrors the CarPlay Dashboard map onto the instrument cluster via cluster-render. No CarPlay binary patch. For builds where waze-on-cluster cannot patch (e.g. 20.x).",
+  "mguHmi": ["ID7"],
+  "uninstallable": true,
+  "requires": {
+    "mgu-deploy": "0.6.3",
+    "cluster-render": "0.2.0"
+  },
+  "files": [
+    {
+      "path": "carplay-map-cluster.js",
+      "mode": "0755"
+    }
+  ],
+  "units": [
+    {
+      "name": "carplay-map.service",
+      "from": "carplay-map.service"
+    }
+  ],
+  "enable": [
+    {
+      "unit": "carplay-map.service",
+      "target": "multi-user.target"
+    }
+  ],
+  "recmgr": ["carplay-map"],
+  "restart": ["carplay-map.service"]
+}
