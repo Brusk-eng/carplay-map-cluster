@@ -28,9 +28,9 @@
  *   --socket PATH     socket do cluster-render (padrão /dev/shm/cluster-render/render.sock)
  *   --target NAME     map | panel | hud (padrão map)
  *   --fps N           quadros/s (padrão 3; imagem inteira ~2MB enche o orçamento de 6MB/s)
- *   --crop X,Y,W,H    free-drive crop (padrão 80,234,1100,486 — bottom-aligned so blue "me" stays in frame)
- *   --crop-nav X,Y,W,H  crop while projectedGuidanceActive (padrão 80,60,1100,486 — higher so ETA is clipped and far-ahead shows)
- *   --fit MODE        cover | contain | fill (padrão cover)
+ *   --crop X,Y,W,H    free-drive crop (padrão 80,240,1088,480 — 1:1 cluster size, bottom me-arrow)
+ *   --crop-nav X,Y,W,H  crop while projectedGuidanceActive (padrão 80,60,1088,480 — clips ETA / far-ahead)
+ *   --fit MODE        cover | contain | fill (padrão fill with 1:1 crop)
  *   --scale MODE      nearest | bilinear (padrão nearest; mais rápido)
  *   --order ORD       rgba | bgra (ordem de canais do winston-grabber; padrão bgra)
  *   --capture BACK    raw | png (padrão raw=winston-grabber; png=ivi-screenshot-control)
@@ -233,27 +233,57 @@ function sampleRGB(img, fx, fy, nearest, px) {
         for (let k = 0; k < 3; k++) { const top = a[k] + (b[k] - a[k]) * ax, bot = c[k] + (d[k] - c[k]) * ax; px[k] = (top + (bot - top) * ay) | 0; }
     }
 }
-/* RGBA -> atlas YUV 4:2:0 (full-range BT.601): Y(vw×vh) + U|V nas vh/2 linhas de baixo */
+/* RGBA -> atlas YUV 4:2:0 (full-range BT.601): Y(vw×vh) + U|V nas vh/2 linhas de baixo.
+ * 1:1 crop uses direct pixel copy (sharper). Chroma averages a 2×2 block (less bleed). */
 function processToYUV(img, opts) {
     const vw = opts.outW, vh = opts.outH, nearest = opts.scale !== 'bilinear';
     const crop = clampCrop(opts.crop, img.width, img.height);
     const src = sourceRect(crop, vw, vh, opts.fit === 'fill' ? 'fill' : 'cover');
-    const atlas = Buffer.alloc(vw * vh + vw * (vh >> 1));
-    const px = [0, 0, 0];
-    for (let oy = 0; oy < vh; oy++) {
-        const fy = src.y + (oy + 0.5) / vh * src.h - 0.5;
-        let yi = oy * vw;
-        for (let ox = 0; ox < vw; ox++, yi++) {
-            sampleRGB(img, src.x + (ox + 0.5) / vw * src.w - 0.5, fy, nearest, px);
-            atlas[yi] = clamp8(0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2]);
+    const need = vw * vh + vw * (vh >> 1);
+    const atlas = (opts.atlas && opts.atlas.length === need) ? opts.atlas : Buffer.alloc(need);
+    const px = [0, 0, 0], p1 = [0, 0, 0], p2 = [0, 0, 0], p3 = [0, 0, 0];
+    const oneToOne = (src.w | 0) === vw && (src.h | 0) === vh &&
+        Math.abs(src.x - (src.x | 0)) < 1e-6 && Math.abs(src.y - (src.y | 0)) < 1e-6;
+    const sx0 = src.x | 0, sy0 = src.y | 0;
+    if (oneToOne) {
+        for (let oy = 0; oy < vh; oy++) {
+            let yi = oy * vw;
+            for (let ox = 0; ox < vw; ox++, yi++) {
+                readRGB(img, sx0 + ox, sy0 + oy, px);
+                atlas[yi] = clamp8(0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2]);
+            }
+        }
+    } else {
+        for (let oy = 0; oy < vh; oy++) {
+            const fy = src.y + (oy + 0.5) / vh * src.h - 0.5;
+            let yi = oy * vw;
+            for (let ox = 0; ox < vw; ox++, yi++) {
+                sampleRGB(img, src.x + (ox + 0.5) / vw * src.w - 0.5, fy, nearest, px);
+                atlas[yi] = clamp8(0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2]);
+            }
         }
     }
-    const base = vw * vh, half = vw >> 1;
+    const base = vw * vh, half = vw >> 1, W = img.width, H = img.height;
     for (let cy = 0; cy < (vh >> 1); cy++) {
-        const fy = src.y + (2 * cy + 1) / vh * src.h - 0.5, row = base + cy * vw;
+        const row = base + cy * vw;
         for (let cx = 0; cx < half; cx++) {
-            sampleRGB(img, src.x + (2 * cx + 1) / vw * src.w - 0.5, fy, nearest, px);
-            const r = px[0], g = px[1], b = px[2];
+            let r = 0, g = 0, b = 0;
+            if (oneToOne) {
+                const x = sx0 + (cx << 1), y = sy0 + (cy << 1);
+                const x1 = x + 1 < W ? x + 1 : x, y1 = y + 1 < H ? y + 1 : y;
+                readRGB(img, x, y, px); readRGB(img, x1, y, p1); readRGB(img, x, y1, p2); readRGB(img, x1, y1, p3);
+                r = (px[0] + p1[0] + p2[0] + p3[0]) * 0.25;
+                g = (px[1] + p1[1] + p2[1] + p3[1]) * 0.25;
+                b = (px[2] + p1[2] + p2[2] + p3[2]) * 0.25;
+            } else {
+                sampleRGB(img, src.x + (2 * cx + 0.5) / vw * src.w - 0.5, src.y + (2 * cy + 0.5) / vh * src.h - 0.5, nearest, px);
+                sampleRGB(img, src.x + (2 * cx + 1.5) / vw * src.w - 0.5, src.y + (2 * cy + 0.5) / vh * src.h - 0.5, nearest, p1);
+                sampleRGB(img, src.x + (2 * cx + 0.5) / vw * src.w - 0.5, src.y + (2 * cy + 1.5) / vh * src.h - 0.5, nearest, p2);
+                sampleRGB(img, src.x + (2 * cx + 1.5) / vw * src.w - 0.5, src.y + (2 * cy + 1.5) / vh * src.h - 0.5, nearest, p3);
+                r = (px[0] + p1[0] + p2[0] + p3[0]) * 0.25;
+                g = (px[1] + p1[1] + p2[1] + p3[1]) * 0.25;
+                b = (px[2] + p1[2] + p2[2] + p3[2]) * 0.25;
+            }
             atlas[row + cx] = clamp8(-0.168736 * r - 0.331264 * g + 0.5 * b + 128);
             atlas[row + half + cx] = clamp8(0.5 * r - 0.418688 * g - 0.081312 * b + 128);
         }
@@ -371,10 +401,10 @@ function grab(a, cb) {
 /* ---------------------------------------------------------------- args */
 function parseArgs(argv) {
     const a = { socket: '/dev/shm/cluster-render/render.sock', target: 'map', fps: 3,
-        /* Free-drive: bottom-align so blue "me" stays in frame. With route: higher crop clips ETA and keeps far-ahead. */
-        crop: { x: 80, y: 234, w: 1100, h: 486 },
-        cropNav: { x: 80, y: 60, w: 1100, h: 486 },
-        fit: 'cover', scale: 'bilinear', order: 'bgra',
+        /* Exact cluster size (1088x480) = 1:1 copy, sharper. Free-drive bottom; nav higher to clip ETA. */
+        crop: { x: 80, y: 240, w: 1088, h: 480 },
+        cropNav: { x: 80, y: 60, w: 1088, h: 480 },
+        fit: 'fill', scale: 'bilinear', order: 'bgra',
         capture: 'raw', mode: 'video', gate: true, gateInitial: 'front', wayland: 'wayland-0', xdg: '/run/wayland',
         capTool: '', screen: 'center', tmp: '', capW: 1920, capH: 720,
         control: true, ctlSock: '/dev/shm/carplay-map/ctl.sock', requireGuidance: false,
@@ -544,6 +574,8 @@ function main() {
     }, log) : null;
 
     let stopped = false, frames = 0, t0 = Date.now(), shownState = null;
+    let atlasBuf = null, holdSavedAt = 0, fmtTick = 0;
+    const HOLD_MS = 250;
     function apply(want) {
         if (want && shownState !== true) { cr.set(ref, { visible: true }); shownState = true; }
         else if (!want && shownState !== false) { cr.set(ref, { visible: false }); shownState = false; }
@@ -555,6 +587,12 @@ function main() {
             if (hold.kind === 'video') cr.frame(ref, hold.buf, frames);
             else cr.pixels(ref, null, hold.buf);
         } catch (e) { log('hold re-push failed: ' + e.message); }
+    }
+    function saveHold(kind, buf) {
+        hold.has = true; hold.kind = kind;
+        const now = Date.now();
+        if (!hold.buf || hold.buf.length !== buf.length) hold.buf = Buffer.alloc(buf.length);
+        if (now - holdSavedAt >= HOLD_MS) { buf.copy(hold.buf); holdSavedAt = now; }
     }
     function keepOrHide(why) {
         if (a.holdLast && hold.has && ctlState.masterEnabled) {
@@ -591,16 +629,24 @@ function main() {
                 if (a.once) return endOnce();
                 return setTimeout(tick, 500);
             }
-            /* Format gate: only *update* from Dashboard; otherwise hold last map. */
+            /* Format gate: only *update* from Dashboard; otherwise hold last map.
+             * While already on Dashboard, re-check every 3rd frame to cut latency. */
             if (a.requireFormat) {
-                const d = detectDashboard(img, a.fmt);
-                if (d.dashboard !== fmtState) {
-                    fmtState = d.dashboard;
-                    log('>> formato ' + (d.dashboard ? 'Dashboard' : 'outro') + ' (meio ' + d.satMap.toFixed(1) + '% / células ' + d.cells + '/' + d.ncells + ') -> ' +
-                        (d.dashboard ? 'live map' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
-                    if (hub) hub.status();
-                }
-                if (!d.dashboard) {
+                const recheck = fmtState !== true || ((++fmtTick) % 3) === 0;
+                if (recheck) {
+                    const d = detectDashboard(img, a.fmt);
+                    if (d.dashboard !== fmtState) {
+                        fmtState = d.dashboard;
+                        log('>> formato ' + (d.dashboard ? 'Dashboard' : 'outro') + ' (meio ' + d.satMap.toFixed(1) + '% / células ' + d.cells + '/' + d.ncells + ') -> ' +
+                            (d.dashboard ? 'live map' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
+                        if (hub) hub.status();
+                    }
+                    if (!d.dashboard) {
+                        keepOrHide('not Dashboard');
+                        if (a.once) return endOnce();
+                        return setTimeout(tick, a.fmtInterval);
+                    }
+                } else if (fmtState === false) {
                     keepOrHide('not Dashboard');
                     if (a.once) return endOnce();
                     return setTimeout(tick, a.fmtInterval);
@@ -617,14 +663,15 @@ function main() {
                         (mode === 'nav' ? ' (clip ETA / show far-ahead)' : ' (keep me-arrow)'));
                 }
                 if (a.mode === 'video') {
-                    const atlas = processToYUV(img, { outW: outW, outH: outH, crop: crop, fit: a.fit, scale: a.scale });
+                    const atlas = processToYUV(img, { outW: outW, outH: outH, crop: crop, fit: a.fit, scale: a.scale, atlas: atlasBuf });
+                    atlasBuf = atlas;
                     cr.frame(ref, atlas, frames); frames++;
-                    hold.has = true; hold.kind = 'video'; hold.buf = Buffer.from(atlas);
+                    saveHold('video', atlas);
                     if (a.save && frames === 1) fs.writeFileSync(a.save, encodePNG(yuvAtlasToRGBA(atlas, outW, outH), outW, outH));
                 } else {
                     const o = processImage(img, { outW: outW, outH: outH, crop: crop, fit: a.fit, scale: a.scale });
                     cr.pixels(ref, null, o.rgba); frames++;
-                    hold.has = true; hold.kind = 'image'; hold.buf = Buffer.from(o.rgba);
+                    saveHold('image', o.rgba);
                     if (a.save && frames === 1) fs.writeFileSync(a.save, encodePNG(o.rgba, outW, outH));
                 }
                 if (a.verbose || frames % Math.max(1, Math.round(a.fps * 10)) === 0)
