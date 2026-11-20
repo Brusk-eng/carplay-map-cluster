@@ -1,9 +1,9 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "title": "CarPlay map \u2192 cluster",
-  "description": "Mirrors the CarPlay Dashboard map onto the instrument cluster via cluster-render. Holds the last map frame when you leave Dashboard (e.g. Spotify) until Dashboard returns. Refuses if waze-on-cluster is installed.",
+  "description": "Mirrors CarPlay Dashboard map to the cluster. Wider aspect-matched crop keeps the free-drive me-puck visible without a route. Holds last map when leaving Dashboard. Refuses if waze-on-cluster is installed.",
   "mguHmi": [
     "ID7"
   ],

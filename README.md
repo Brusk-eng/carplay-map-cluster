@@ -98,6 +98,7 @@ The script refuses if `waze-on-cluster` is current, packs the tool with correct 
 
 - CarPlay must stay **visible** (BMW menu in front → nothing to capture → blank)  
 - Use **Dashboard** map layout (fullscreen map is gated off on purpose)
+- **No-route “me” puck:** default crop matches cluster aspect + bilinear scale so the free-drive cursor is less likely to vanish (route-on was already fine)
 - **Hold last map** (default): leave Dashboard (e.g. Spotify) → cluster keeps a **frozen** last map until Dashboard returns; toggle Off clears it  
 - Toggle with **Map on cluster**; service auto-starts on boot (`--gate-initial menu`)  
 - If crop/detection looks wrong on your CarPlay build, calibrate on the unit:

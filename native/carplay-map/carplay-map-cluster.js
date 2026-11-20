@@ -28,7 +28,7 @@
  *   --socket PATH     socket do cluster-render (padrão /dev/shm/cluster-render/render.sock)
  *   --target NAME     map | panel | hud (padrão map)
  *   --fps N           quadros/s (padrão 3; imagem inteira ~2MB enche o orçamento de 6MB/s)
- *   --crop X,Y,W,H    região do 1920x720 a usar (padrão 160,0,1020,720)
+ *   --crop X,Y,W,H    região do 1920x720 a usar (padrão 100,110,1100,486 — ~cluster aspect)
  *   --fit MODE        cover | contain | fill (padrão cover)
  *   --scale MODE      nearest | bilinear (padrão nearest; mais rápido)
  *   --order ORD       rgba | bgra (ordem de canais do winston-grabber; padrão bgra)
@@ -370,7 +370,8 @@ function grab(a, cb) {
 /* ---------------------------------------------------------------- args */
 function parseArgs(argv) {
     const a = { socket: '/dev/shm/cluster-render/render.sock', target: 'map', fps: 3,
-        crop: { x: 160, y: 0, w: 1020, h: 720 }, fit: 'cover', scale: 'nearest', order: 'bgra',
+        /* Match cluster aspect (~1088x480) so cover does not zoom-crop the free-drive "me" puck. */
+        crop: { x: 100, y: 110, w: 1100, h: 486 }, fit: 'cover', scale: 'bilinear', order: 'bgra',
         capture: 'raw', mode: 'video', gate: true, gateInitial: 'front', wayland: 'wayland-0', xdg: '/run/wayland',
         capTool: '', screen: 'center', tmp: '', capW: 1920, capH: 720,
         control: true, ctlSock: '/dev/shm/carplay-map/ctl.sock', requireGuidance: false,
