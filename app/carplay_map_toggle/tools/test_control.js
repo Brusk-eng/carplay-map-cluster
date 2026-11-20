@@ -29,26 +29,26 @@ function makeControl() {
     const c = makeControl();
 
     c.ctl.link = 'down';
-    assert.strictEqual(c.statusText(), 'Conectando…', 'down -> Conectando');
+    assert.strictEqual(c.statusText(), 'Connecting…', 'down -> Connecting');
 
     c.ctl.link = 'absent';   // socket file missing (producer not running)
-    assert.strictEqual(c.statusText(), 'Produtor offline', 'absent -> Produtor offline');
+    assert.strictEqual(c.statusText(), 'Producer offline', 'absent -> Producer offline');
 
     c.ctl.link = 'refused';
-    assert.strictEqual(c.statusText(), 'Produtor offline', 'refused -> Produtor offline');
+    assert.strictEqual(c.statusText(), 'Producer offline', 'refused -> Producer offline');
 
     c.ctl.link = 'up';
     c.status = null;
-    assert.strictEqual(c.statusText(), 'Conectando…', 'up, no status yet -> Conectando');
+    assert.strictEqual(c.statusText(), 'Connecting…', 'up, no status yet -> Connecting');
 
     c._onMessage({ ev: 'status', state: 'on', enabled: true, carplay: true });
-    assert.strictEqual(c.statusText(), 'Ligado (espelhando)', 'on');
+    assert.strictEqual(c.statusText(), 'On (mirroring)', 'on');
 
     c._onMessage({ ev: 'status', state: 'standby', enabled: true, carplay: false });
-    assert.strictEqual(c.statusText(), 'Ligado — aguardando CarPlay', 'standby');
+    assert.strictEqual(c.statusText(), 'On — waiting for CarPlay', 'standby');
 
     c._onMessage({ ev: 'status', state: 'off', enabled: false, carplay: false });
-    assert.strictEqual(c.statusText(), 'Desligado', 'off');
+    assert.strictEqual(c.statusText(), 'Off', 'off');
 })();
 
 /* button label follows isOn() */
