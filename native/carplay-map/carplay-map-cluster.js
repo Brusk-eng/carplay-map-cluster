@@ -213,11 +213,39 @@ function gridCells(img, x0, y0, x1, y1, cols, rows, satTh, cellTh, step) {
 function rightCells(img, f) {
     return gridCells(img, f.rX0, f.rY0, f.rX1, f.rY1, f.cols, f.rows, f.satTh, f.cellTh, f.step);
 }
-/* Colorful tiles in the map pane = CarPlay home / app grid, not a map. */
-function iconCells(img, f) {
-    const iconSat = f.iconSat != null ? f.iconSat : 28;
-    const iconCellTh = f.iconCellTh != null ? f.iconCellTh : 25;
-    return gridCells(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.cols, f.rows, iconSat, iconCellTh, f.step);
+/* Flat high-chroma tiles = CarPlay home app icons (large squares).
+ * Waze/Google pins are small → cell still has high texture (mad) → not counted.
+ * Old "any colorful cell" test froze Waze because of alerts/pins. */
+function cellStats(img, x0, y0, x1, y1, satTh, step) {
+    const X0 = (x0 * img.width) | 0, Y0 = (y0 * img.height) | 0, X1 = (x1 * img.width) | 0, Y1 = (y1 * img.height) | 0;
+    const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
+    const px = [0, 0, 0]; let sat = 0, n = 0, sumY = 0;
+    const ys = [];
+    for (let y = Y0; y < Y1; y += sy) for (let x = X0; x < X1; x += sx) {
+        readRGB(img, x, y, px);
+        const mx = px[0] > px[1] ? (px[0] > px[2] ? px[0] : px[2]) : (px[1] > px[2] ? px[1] : px[2]);
+        const mn = px[0] < px[1] ? (px[0] < px[2] ? px[0] : px[2]) : (px[1] < px[2] ? px[1] : px[2]);
+        if (mx - mn > satTh) sat++;
+        const Y = 0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2];
+        sumY += Y; ys.push(Y); n++;
+    }
+    if (!n) return { sat: 0, mad: 0 };
+    const mean = sumY / n;
+    let mad = 0;
+    for (let i = 0; i < ys.length; i++) mad += Math.abs(ys[i] - mean);
+    return { sat: 100 * sat / n, mad: mad / n };
+}
+function flatIconCells(img, f) {
+    const iconSat = f.iconSat != null ? f.iconSat : 35;
+    const artMad = f.iconMad != null ? f.iconMad : 26;
+    let nc = 0;
+    for (let cx = 0; cx < f.cols; cx++) for (let cy = 0; cy < f.rows; cy++) {
+        const ax = f.mapX0 + (f.mapX1 - f.mapX0) * cx / f.cols, bx = f.mapX0 + (f.mapX1 - f.mapX0) * (cx + 1) / f.cols;
+        const ay = f.mapY0 + (f.mapY1 - f.mapY0) * cy / f.rows, by = f.mapY0 + (f.mapY1 - f.mapY0) * (cy + 1) / f.rows;
+        const st = cellStats(img, ax, ay, bx, by, f.satTh, f.step);
+        if (st.sat > iconSat && st.mad < artMad) nc++;
+    }
+    return nc;
 }
 /* 21/22 Dashboard has a dark icon rail on the left; 20 is usually map-flush. */
 function detectIconRail(img, f) {
@@ -229,21 +257,23 @@ function detectIconRail(img, f) {
 function detectDashboard(img, f) {
     const satMap = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.satTh, f.step);
     const cells = rightCells(img, f);
-    const icons = iconCells(img, f);
+    const icons = flatIconCells(img, f);
     const luma = meanLuma(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.step);
     const lightLuma = f.lightLuma != null ? f.lightLuma : 200;
     const lightSatTh = f.lightSatTh != null ? f.lightSatTh : 15;
     const tMapLight = f.tMapLight != null ? f.tMapLight : 3;
-    const tIcon = f.tIcon != null ? f.tIcon : 5;
+    const tIcon = f.tIcon != null ? f.tIcon : 4;
     const satLight = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, lightSatTh, f.step);
     const rail = detectIconRail(img, f);
-    const classic = satMap >= f.tMap && cells <= f.tCells && icons < tIcon;
-    const lightMap = luma >= lightLuma && satLight >= tMapLight && icons < tIcon;
-    const darkMedia = luma < 120 && satMap >= f.tMap && cells > f.tCells;
     const homeGrid = icons >= tIcon;
-    const ok = !darkMedia && !homeGrid && (classic || lightMap);
+    const classic = satMap >= f.tMap && cells <= f.tCells && !homeGrid;
+    const lightMap = luma >= lightLuma && satLight >= tMapLight && !homeGrid;
+    /* Waze / sat maps on 21/22 Dashboard: colorful map + icon rail, not home tiles. */
+    const dashMap = rail && !homeGrid && (satMap >= 2 || satLight >= 2 || luma >= 70) && cells <= Math.max(f.tCells, 10);
+    const darkMedia = luma < 120 && satMap >= f.tMap && cells > f.tCells && !rail;
+    const ok = !darkMedia && !homeGrid && (classic || lightMap || dashMap);
     return { dashboard: ok, satMap: satMap, satLight: satLight, cells: cells, icons: icons, luma: luma,
-        lightMap: lightMap, rail: rail, homeGrid: homeGrid, ncells: f.cols * f.rows };
+        lightMap: lightMap, dashMap: dashMap, rail: rail, homeGrid: homeGrid, ncells: f.cols * f.rows };
 }
 /* img (rgb/rgba/bgra) -> RGBA reto (p/ salvar com encodePNG em --calibrate/debug) */
 function toRGBA(img) {
@@ -449,7 +479,7 @@ function parseArgs(argv) {
         capTool: '', screen: 'center', tmp: '', capW: 1920, capH: 720,
         control: true, ctlSock: '/dev/shm/carplay-map/ctl.sock', requireGuidance: false,
         requireFormat: true, holdLast: true, calibrate: false,
-        fmt: { mapX0: 0.12, mapY0: 0.08, mapX1: 0.70, mapY1: 0.92, rX0: 0.74, rY0: 0.06, rX1: 0.99, rY1: 0.95, satTh: 40, tMap: 5, tCells: 7, cellTh: 15, cols: 4, rows: 4, step: 70, lightLuma: 200, lightSatTh: 15, tMapLight: 3, tIcon: 5, iconSat: 28, iconCellTh: 25 },
+        fmt: { mapX0: 0.12, mapY0: 0.08, mapX1: 0.70, mapY1: 0.92, rX0: 0.74, rY0: 0.06, rX1: 0.99, rY1: 0.95, satTh: 40, tMap: 5, tCells: 7, cellTh: 15, cols: 4, rows: 4, step: 70, lightLuma: 200, lightSatTh: 15, tMapLight: 3, tIcon: 4, iconSat: 35, iconMad: 26 },
         contend: true, once: false, infile: '', save: '', verbose: false };
     for (let i = 0; i < argv.length; i++) {
         const k = argv[i];
@@ -688,10 +718,10 @@ function main() {
                     }
                     if (d.dashboard !== fmtState) {
                         fmtState = d.dashboard;
-                        log('>> formato ' + (d.dashboard ? (d.lightMap ? 'map-light' : 'map') : (d.homeGrid ? 'home/grid' : 'not-map')) +
+                        log('>> formato ' + (d.dashboard ? (d.lightMap ? 'map-light' : (d.dashMap ? 'map-dash' : 'map')) : (d.homeGrid ? 'home/grid' : 'not-map')) +
                             ' (meio ' + d.satMap.toFixed(1) + '% soft ' + (d.satLight != null ? d.satLight.toFixed(1) : '?') +
                             '% luma ' + (d.luma != null ? d.luma.toFixed(0) : '?') +
-                            ' icons ' + d.icons + ' / cells ' + d.cells + '/' + d.ncells + ') -> ' +
+                            ' flatIcons ' + d.icons + ' / cells ' + d.cells + '/' + d.ncells + ') -> ' +
                             (d.dashboard ? 'live map' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
                         if (hub) hub.status();
                     }

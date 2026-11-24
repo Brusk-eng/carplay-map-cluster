@@ -1,9 +1,9 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "title": "CarPlay map \u2192 cluster",
-  "description": "Mirrors CarPlay Dashboard map on 20\u201322. Keeps me-arrow visible, nudges crop right; rail auto-shift on 21/22; holds last map on home swipe.",
+  "description": "Mirrors CarPlay Dashboard maps (Google/Waze/Apple) on 20\u201322. Flat-icon home reject (won\u2019t freeze on Waze pins); me-arrow crop; rail shift.",
   "mguHmi": [
     "ID7"
   ],
