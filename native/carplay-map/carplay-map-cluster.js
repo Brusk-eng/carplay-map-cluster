@@ -28,8 +28,8 @@
  *   --socket PATH     socket do cluster-render (padrão /dev/shm/cluster-render/render.sock)
  *   --target NAME     map | panel | hud (padrão map)
  *   --fps N           quadros/s (padrão 3; imagem inteira ~2MB enche o orçamento de 6MB/s)
- *   --crop X,Y,W,H    free-drive crop (padrão 80,240,1088,480 — 1:1 cluster size, bottom me-arrow)
- *   --crop-nav X,Y,W,H  crop while projectedGuidanceActive (padrão 80,60,1088,480 — clips ETA / far-ahead)
+ *   --crop X,Y,W,H    free-drive crop (padrão 140,220,1088,480 — 1:1, centered Dashboard map, me-arrow on-screen)
+ *   --crop-nav X,Y,W,H  crop while projectedGuidanceActive (padrão 140,50,1088,480 — clips ETA / far-ahead)
  *   --fit MODE        cover | contain | fill (padrão fill with 1:1 crop)
  *   --scale MODE      nearest | bilinear (padrão nearest; mais rápido)
  *   --order ORD       rgba | bgra (ordem de canais do winston-grabber; padrão bgra)
@@ -401,9 +401,9 @@ function grab(a, cb) {
 /* ---------------------------------------------------------------- args */
 function parseArgs(argv) {
     const a = { socket: '/dev/shm/cluster-render/render.sock', target: 'map', fps: 3,
-        /* Exact cluster size (1088x480) = 1:1 copy, sharper. Free-drive bottom; nav higher to clip ETA. */
-        crop: { x: 80, y: 240, w: 1088, h: 480 },
-        cropNav: { x: 80, y: 60, w: 1088, h: 480 },
+        /* Exact cluster size (1088x480) = 1:1. x=140 centers Dashboard map; y=220 keeps me-arrow visible. */
+        crop: { x: 140, y: 220, w: 1088, h: 480 },
+        cropNav: { x: 140, y: 50, w: 1088, h: 480 },
         fit: 'fill', scale: 'bilinear', order: 'bgra',
         capture: 'raw', mode: 'video', gate: true, gateInitial: 'front', wayland: 'wayland-0', xdg: '/run/wayland',
         capTool: '', screen: 'center', tmp: '', capW: 1920, capH: 720,

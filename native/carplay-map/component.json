@@ -1,9 +1,9 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "title": "CarPlay map \u2192 cluster",
-  "description": "Stable restore of 0.2.10 (working Dashboard mirror). Later detector experiments reverted. 1:1 crop, 7 fps, nav/free crops, hold-last.",
+  "description": "Center Dashboard map on cluster (crop x=140,y=220). Same 0.2.10 mirror path; no format detectors.",
   "mguHmi": [
     "ID7"
   ],
