@@ -1,9 +1,9 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "title": "CarPlay no cluster (produtor)",
-  "description": "CarPlay map Dashboard only. Blocks weather/clock/home from the cluster; holds last real map when you leave Maps/Waze/Google.",
+  "description": "Stable restore of 0.2.10 (working Dashboard mirror). Later detector experiments reverted. 1:1 crop, 7 fps, nav/free crops, hold-last.",
   "mguHmi": [
     "ID7"
   ],

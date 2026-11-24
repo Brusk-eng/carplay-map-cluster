@@ -171,12 +171,14 @@ function processImage(img, opts) {
 }
 
 /* ---------------------------------------------------------------- detector de formato (Dashboard do CarPlay) */
-/* Works on CarPlay 20 + 21/22:
- *  - Classic dark maps: sat map pane + concentrated right cards.
- *  - Light day maps: high luma + soft sat (Apple Maps white style).
- *  - Reject app-grid / home swipe: too many colorful "icon" cells in the map pane.
- *  - Reject dark media (Spotify): low luma + colorful tiles.
- * Layout: left icon rail (21/22) shifts the crop right so the map stays centered. */
+/* Dashboard = mapa COLORIDO à esquerda + coluna de cards à direita. Dois testes:
+ *  1) MEIO (mapa) colorido: % de pixels saturados (|max-min|>satTh) >= tMap.
+ *  2) DIREITA não é mapa: a cor na direita tem que estar CONCENTRADA, não espalhada.
+ *     Divide a coluna direita numa grade cols×rows; conta células "coloridas"
+ *     (sat% > cellTh). Mapa em tela cheia espalha cor por ~todas as células (12-13/16);
+ *     card de música concentra a capa em 1-2 células. Exige nº de células <= tCells.
+ * Medido no carro: Dash 0-2 células, tela cheia 12-13 (margem grande). Robusto a
+ * música/capa, mapa sem rota e zoom. Ordem de canais (rgba/bgra) não importa p/ max-min. */
 function satPct(img, x0, y0, x1, y1, satTh, step) {
     const X0 = (x0 * img.width) | 0, Y0 = (y0 * img.height) | 0, X1 = (x1 * img.width) | 0, Y1 = (y1 * img.height) | 0;
     const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
@@ -190,142 +192,20 @@ function satPct(img, x0, y0, x1, y1, satTh, step) {
     }
     return n ? 100 * sat / n : 0;
 }
-function meanLuma(img, x0, y0, x1, y1, step) {
-    const X0 = (x0 * img.width) | 0, Y0 = (y0 * img.height) | 0, X1 = (x1 * img.width) | 0, Y1 = (y1 * img.height) | 0;
-    const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
-    const px = [0, 0, 0]; let sum = 0, n = 0;
-    for (let y = Y0; y < Y1; y += sy) for (let x = X0; x < X1; x += sx) {
-        readRGB(img, x, y, px);
-        sum += 0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2];
-        n++;
-    }
-    return n ? sum / n : 0;
-}
-function gridCells(img, x0, y0, x1, y1, cols, rows, satTh, cellTh, step) {
-    let nc = 0;
-    for (let cx = 0; cx < cols; cx++) for (let cy = 0; cy < rows; cy++) {
-        const ax = x0 + (x1 - x0) * cx / cols, bx = x0 + (x1 - x0) * (cx + 1) / cols;
-        const ay = y0 + (y1 - y0) * cy / rows, by = y0 + (y1 - y0) * (cy + 1) / rows;
-        if (satPct(img, ax, ay, bx, by, satTh, step) > cellTh) nc++;
-    }
-    return nc;
-}
+/* nº de células da coluna direita (grade cols×rows) com sat% acima de cellTh */
 function rightCells(img, f) {
-    return gridCells(img, f.rX0, f.rY0, f.rX1, f.rY1, f.cols, f.rows, f.satTh, f.cellTh, f.step);
-}
-/* Flat high-chroma tiles = CarPlay home app icons (large squares).
- * Waze/Google pins are small → cell still has high texture (mad) → not counted.
- * Old "any colorful cell" test froze Waze because of alerts/pins. */
-function cellStats(img, x0, y0, x1, y1, satTh, step) {
-    const X0 = (x0 * img.width) | 0, Y0 = (y0 * img.height) | 0, X1 = (x1 * img.width) | 0, Y1 = (y1 * img.height) | 0;
-    const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
-    const px = [0, 0, 0]; let sat = 0, n = 0, sumY = 0;
-    const ys = [];
-    for (let y = Y0; y < Y1; y += sy) for (let x = X0; x < X1; x += sx) {
-        readRGB(img, x, y, px);
-        const mx = px[0] > px[1] ? (px[0] > px[2] ? px[0] : px[2]) : (px[1] > px[2] ? px[1] : px[2]);
-        const mn = px[0] < px[1] ? (px[0] < px[2] ? px[0] : px[2]) : (px[1] < px[2] ? px[1] : px[2]);
-        if (mx - mn > satTh) sat++;
-        const Y = 0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2];
-        sumY += Y; ys.push(Y); n++;
-    }
-    if (!n) return { sat: 0, mad: 0 };
-    const mean = sumY / n;
-    let mad = 0;
-    for (let i = 0; i < ys.length; i++) mad += Math.abs(ys[i] - mean);
-    return { sat: 100 * sat / n, mad: mad / n };
-}
-function flatIconCells(img, f) {
-    const iconSat = f.iconSat != null ? f.iconSat : 35;
-    const artMad = f.iconMad != null ? f.iconMad : 26;
     let nc = 0;
     for (let cx = 0; cx < f.cols; cx++) for (let cy = 0; cy < f.rows; cy++) {
-        const ax = f.mapX0 + (f.mapX1 - f.mapX0) * cx / f.cols, bx = f.mapX0 + (f.mapX1 - f.mapX0) * (cx + 1) / f.cols;
-        const ay = f.mapY0 + (f.mapY1 - f.mapY0) * cy / f.rows, by = f.mapY0 + (f.mapY1 - f.mapY0) * (cy + 1) / f.rows;
-        const st = cellStats(img, ax, ay, bx, by, f.satTh, f.step);
-        if (st.sat > iconSat && st.mad < artMad) nc++;
+        const ax = f.rX0 + (f.rX1 - f.rX0) * cx / f.cols, bx = f.rX0 + (f.rX1 - f.rX0) * (cx + 1) / f.cols;
+        const ay = f.rY0 + (f.rY1 - f.rY0) * cy / f.rows, by = f.rY0 + (f.rY1 - f.rY0) * (cy + 1) / f.rows;
+        if (satPct(img, ax, ay, bx, by, f.satTh, f.step) > f.cellTh) nc++;
     }
     return nc;
-}
-/* 21/22 Dashboard has a dark icon rail on the left; 20 is usually map-flush. */
-function detectIconRail(img, f) {
-    const left = meanLuma(img, 0.01, 0.12, 0.075, 0.88, f.step);
-    const mid = meanLuma(img, 0.14, 0.12, 0.55, 0.88, f.step);
-    const leftIcons = gridCells(img, 0.01, 0.12, 0.08, 0.88, 2, 6, 25, 18, f.step);
-    return (mid - left) >= 35 && leftIcons >= 2;
-}
-/* Region stats: warmFrac + luma MAD (smooth gradients vs textured maps). */
-function regionWarmMad(img, x0, y0, x1, y1, step) {
-    const X0 = (x0 * img.width) | 0, Y0 = (y0 * img.height) | 0, X1 = (x1 * img.width) | 0, Y1 = (y1 * img.height) | 0;
-    const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
-    const px = [0, 0, 0]; let n = 0, warm = 0, sumY = 0;
-    const ys = [];
-    for (let y = Y0; y < Y1; y += sy) for (let x = X0; x < X1; x += sx) {
-        readRGB(img, x, y, px);
-        const r = px[0], g = px[1], b = px[2];
-        const Y = 0.299 * r + 0.587 * g + 0.114 * b;
-        sumY += Y; ys.push(Y); n++;
-        if (r > g + 12 && r > b + 12 && r > 70) warm++;
-    }
-    if (!n) return { warm: 0, mad: 0 };
-    const mean = sumY / n;
-    let mad = 0;
-    for (let i = 0; i < ys.length; i++) mad += Math.abs(ys[i] - mean);
-    return { warm: warm / n, mad: mad / n };
-}
-/* Blue/cyan from me-arrow, routes, water — strong “this is a map” hint. */
-function navBlueFrac(img, f) {
-    const X0 = (f.mapX0 * img.width) | 0, Y0 = (f.mapY0 * img.height) | 0;
-    const X1 = (f.mapX1 * img.width) | 0, Y1 = (f.mapY1 * img.height) | 0;
-    const step = Math.max(40, (f.step || 70) - 10);
-    const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
-    const px = [0, 0, 0]; let n = 0, blue = 0;
-    for (let y = Y0; y < Y1; y += sy) for (let x = X0; x < X1; x += sx) {
-        readRGB(img, x, y, px);
-        const r = px[0], g = px[1], b = px[2];
-        n++;
-        if (b > r + 18 && b > g - 5 && b > 90 && b - Math.min(r, g) > 25) blue++;
-        else if (b > 140 && g > 100 && r < 100 && b >= g) blue++; /* cyan route */
-    }
-    return n ? blue / n : 0;
-}
-/* Weather/clock CarPlay pages: copper/brown smooth gradients (often clock + stats + sunset).
- * Real maps are cooler/textured or have nav-blue; Dashboard cards on the right are cool gray. */
-function isWeatherWidget(img, f) {
-    const mid = regionWarmMad(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.step || 70);
-    const right = regionWarmMad(img, f.rX0, f.rY0, f.rX1, f.rY1, f.step || 70);
-    const midHot = mid.warm >= 0.32 && mid.mad < 40;
-    const rightHot = right.warm >= 0.20 && right.mad < 42;
-    /* Full weather page paints the right column too; map+music keeps right cards cool/gray. */
-    if (midHot && rightHot) return true;
-    if (mid.warm >= 0.42 && mid.mad < 34) return true;
-    return false;
 }
 function detectDashboard(img, f) {
     const satMap = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.satTh, f.step);
     const cells = rightCells(img, f);
-    const icons = flatIconCells(img, f);
-    const luma = meanLuma(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.step);
-    const lightLuma = f.lightLuma != null ? f.lightLuma : 200;
-    const lightSatTh = f.lightSatTh != null ? f.lightSatTh : 15;
-    const tMapLight = f.tMapLight != null ? f.tMapLight : 3;
-    const tIcon = f.tIcon != null ? f.tIcon : 4;
-    const satLight = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, lightSatTh, f.step);
-    const rail = detectIconRail(img, f);
-    const navBlue = navBlueFrac(img, f);
-    const homeGrid = icons >= tIcon;
-    const widget = isWeatherWidget(img, f) && navBlue < 0.006;
-    const cardsOk = cells <= Math.max(f.tCells, 9);
-    const classic = satMap >= f.tMap && cardsOk && !homeGrid && !widget;
-    const lightMap = luma >= lightLuma && satLight >= tMapLight && cardsOk && !homeGrid && !widget;
-    const blueMap = navBlue >= 0.008 && cardsOk && !homeGrid && !widget;
-    const dashMap = rail && cardsOk && !homeGrid && !widget &&
-        (satMap >= f.tMap || lightMap || blueMap || satMap >= 4);
-    const darkMedia = luma < 120 && satMap >= f.tMap && cells > f.tCells && !rail && !blueMap;
-    const ok = !darkMedia && !homeGrid && !widget && (classic || lightMap || blueMap || dashMap);
-    return { dashboard: ok, satMap: satMap, satLight: satLight, cells: cells, icons: icons, luma: luma,
-        navBlue: navBlue, lightMap: lightMap, dashMap: dashMap, blueMap: blueMap,
-        rail: rail, homeGrid: homeGrid, widget: widget, ncells: f.cols * f.rows };
+    return { dashboard: satMap >= f.tMap && cells <= f.tCells, satMap: satMap, cells: cells, ncells: f.cols * f.rows };
 }
 /* img (rgb/rgba/bgra) -> RGBA reto (p/ salvar com encodePNG em --calibrate/debug) */
 function toRGBA(img) {
@@ -521,17 +401,15 @@ function grab(a, cb) {
 /* ---------------------------------------------------------------- args */
 function parseArgs(argv) {
     const a = { socket: '/dev/shm/cluster-render/render.sock', target: 'map', fps: 3,
-        /* 1088x480 = 1:1. Keep bottom framing so the blue me-arrow stays visible (y≈230),
-         * nudge right vs old x=80 so the map sits nearer center. Icon-rail (21/22) adds railShift. */
-        crop: { x: 140, y: 230, w: 1088, h: 480 },
-        cropNav: { x: 140, y: 50, w: 1088, h: 480 },
-        railShift: 80,
+        /* Exact cluster size (1088x480) = 1:1 copy, sharper. Free-drive bottom; nav higher to clip ETA. */
+        crop: { x: 80, y: 240, w: 1088, h: 480 },
+        cropNav: { x: 80, y: 60, w: 1088, h: 480 },
         fit: 'fill', scale: 'bilinear', order: 'bgra',
         capture: 'raw', mode: 'video', gate: true, gateInitial: 'front', wayland: 'wayland-0', xdg: '/run/wayland',
         capTool: '', screen: 'center', tmp: '', capW: 1920, capH: 720,
         control: true, ctlSock: '/dev/shm/carplay-map/ctl.sock', requireGuidance: false,
         requireFormat: true, holdLast: true, calibrate: false,
-        fmt: { mapX0: 0.12, mapY0: 0.08, mapX1: 0.70, mapY1: 0.92, rX0: 0.74, rY0: 0.06, rX1: 0.99, rY1: 0.95, satTh: 40, tMap: 5, tCells: 7, cellTh: 15, cols: 4, rows: 4, step: 70, lightLuma: 200, lightSatTh: 15, tMapLight: 3, tIcon: 4, iconSat: 35, iconMad: 26 },
+        fmt: { mapX0: 0.10, mapY0: 0.12, mapX1: 0.58, mapY1: 0.88, rX0: 0.645, rY0: 0.06, rX1: 0.985, rY1: 0.95, satTh: 40, tMap: 5, tCells: 7, cellTh: 15, cols: 4, rows: 4, step: 70 },
         contend: true, once: false, infile: '', save: '', verbose: false };
     for (let i = 0; i < argv.length; i++) {
         const k = argv[i];
@@ -540,7 +418,6 @@ function parseArgs(argv) {
         else if (k === '--fps') a.fps = Math.max(0.2, parseFloat(argv[++i]) || 3);
         else if (k === '--crop') { const m = (argv[++i] || '').split(','); a.crop = { x: +m[0], y: +m[1], w: +m[2], h: +m[3] }; }
         else if (k === '--crop-nav') { const m = (argv[++i] || '').split(','); a.cropNav = { x: +m[0], y: +m[1], w: +m[2], h: +m[3] }; }
-        else if (k === '--rail-shift') a.railShift = Math.max(0, parseInt(argv[++i], 10) || 0);
         else if (k === '--fit') a.fit = argv[++i];
         else if (k === '--scale') a.scale = argv[++i];
         else if (k === '--order') a.order = argv[++i];
@@ -606,13 +483,8 @@ function main() {
         grab(a, (err, img) => {
             if (err) { console.error('captura falhou: ' + (err.message || err)); process.exit(1); }
             const d = detectDashboard(img, a.fmt);
-            log('CALIBRATE ' + img.width + 'x' + img.height + ': satMeio=' + d.satMap.toFixed(1) + '% satLight=' +
-                (d.satLight != null ? d.satLight.toFixed(1) : '?') + '% luma=' + (d.luma != null ? d.luma.toFixed(0) : '?') +
-                ' cells=' + d.cells + '/' + d.ncells + ' icons=' + d.icons +
-                (d.lightMap ? ' lightMap' : '') + (d.rail ? ' rail' : '') +
-                (d.homeGrid ? ' HOME' : '') + (d.widget ? ' WIDGET' : ''));
-            log('thresholds: map only (reject home/weather)  ->  ' +
-                (d.dashboard ? 'MAP (would mirror)' : 'NOT-map (hold/hide)'));
+            log('CALIBRAÇÃO ' + img.width + 'x' + img.height + ': satMeio=' + d.satMap.toFixed(1) + '% células=' + d.cells + '/' + d.ncells + ' (satTh=' + a.fmt.satTh + ', cellTh=' + a.fmt.cellTh + ')');
+            log('limiares: meio>=' + a.fmt.tMap + '%  células<=' + a.fmt.tCells + '  ->  ' + (d.dashboard ? 'DASHBOARD (espelharia)' : 'NÃO-dashboard (esconderia)'));
             if (a.save) { try { fs.writeFileSync(a.save, encodePNG(toRGBA(img), img.width, img.height)); log('frame salvo em ' + a.save); } catch (e) { log('save falhou: ' + e.message); } }
             process.exit(0);
         });
@@ -672,12 +544,10 @@ function main() {
 
     const ctlState = { masterEnabled: true };
     let hub = null;
-    let hold = { has: false, kind: null, buf: null, holding: false, fromMap: false };
-    let cropMode = null, layoutRail = false;
+    let hold = { has: false, kind: null, buf: null, holding: false };
+    let cropMode = null;
     function activeCrop() {
-        const base = (gate.guidance === true) ? a.cropNav : a.crop;
-        const shift = layoutRail ? a.railShift : 0;
-        return { x: base.x + shift, y: base.y, w: base.w, h: base.h };
+        return (gate.guidance === true) ? a.cropNav : a.crop;
     }
     const gate = a.gate ? startGate(a.gateInitial !== 'menu', log, (front, o) => {
         log('>> screenOwner=' + o + ' -> ' + (front ? 'CarPlay front' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
@@ -698,13 +568,13 @@ function main() {
         if (cmd === 'enable') ctlState.masterEnabled = true;
         else if (cmd === 'disable') {
             ctlState.masterEnabled = false;
-            hold.has = false; hold.buf = null; hold.holding = false; hold.fromMap = false;
+            hold.has = false; hold.buf = null; hold.holding = false;
         }
         log('>> controle: ' + cmd);
     }, log) : null;
 
     let stopped = false, frames = 0, t0 = Date.now(), shownState = null;
-    let atlasBuf = null, holdSavedAt = 0, failStreak = 0;
+    let atlasBuf = null, holdSavedAt = 0, fmtTick = 0;
     const HOLD_MS = 250;
     function apply(want) {
         if (want && shownState !== true) { cr.set(ref, { visible: true }); shownState = true; }
@@ -719,7 +589,7 @@ function main() {
         } catch (e) { log('hold re-push failed: ' + e.message); }
     }
     function saveHold(kind, buf) {
-        hold.has = true; hold.kind = kind; hold.fromMap = true;
+        hold.has = true; hold.kind = kind;
         const now = Date.now();
         if (!hold.buf || hold.buf.length !== buf.length) hold.buf = Buffer.alloc(buf.length);
         if (now - holdSavedAt >= HOLD_MS) { buf.copy(hold.buf); holdSavedAt = now; }
@@ -742,7 +612,7 @@ function main() {
     function tick() {
         if (stopped) return;
         if (!ctlState.masterEnabled) {
-            hold.has = false; hold.buf = null; hold.holding = false; hold.fromMap = false;
+            hold.has = false; hold.buf = null; hold.holding = false;
             apply(false); setTimeout(tick, 400); return;
         }
         /* Live capture only while CarPlay is in front (+ guidance if required). */
@@ -753,57 +623,44 @@ function main() {
         }
         const t = Date.now();
         grab(a, (err, img) => {
-            try {
-                if (err) {
-                    failStreak++;
-                    log('captura falhou: ' + (err.message || err) + ' (streak ' + failStreak + ')');
-                    keepOrHide('capture failed');
-                    if (a.once) return endOnce();
-                    return setTimeout(tick, Math.min(2000, 400 + failStreak * 200));
-                }
-                failStreak = 0;
-                /* Format every frame so home/weather swipe holds last map immediately (20 + 21/22). */
-                if (a.requireFormat) {
+            if (err) {
+                log('captura falhou: ' + (err.message || err));
+                keepOrHide('capture failed');
+                if (a.once) return endOnce();
+                return setTimeout(tick, 500);
+            }
+            /* Format gate: only *update* from Dashboard; otherwise hold last map.
+             * While already on Dashboard, re-check every 3rd frame to cut latency. */
+            if (a.requireFormat) {
+                const recheck = fmtState !== true || ((++fmtTick) % 3) === 0;
+                if (recheck) {
                     const d = detectDashboard(img, a.fmt);
-                    if (!!d.rail !== layoutRail) {
-                        layoutRail = !!d.rail;
-                        log('>> layout ' + (layoutRail ? 'icon-rail (21/22 shift ' + a.railShift + 'px)' : 'flush (20)'));
-                    }
                     if (d.dashboard !== fmtState) {
                         fmtState = d.dashboard;
-                        log('>> formato ' + (d.dashboard ? (d.blueMap ? 'map-blue' : (d.lightMap ? 'map-light' : (d.dashMap ? 'map-dash' : 'map'))) :
-                            (d.homeGrid ? 'home/grid' : (d.widget ? 'widget/weather' : 'not-map'))) +
-                            ' (meio ' + d.satMap.toFixed(1) + '% soft ' + (d.satLight != null ? d.satLight.toFixed(1) : '?') +
-                            '% luma ' + (d.luma != null ? d.luma.toFixed(0) : '?') +
-                            ' navBlue ' + (d.navBlue != null ? (100 * d.navBlue).toFixed(1) : '?') +
-                            '% flatIcons ' + d.icons + ' / cells ' + d.cells + '/' + d.ncells + ') -> ' +
+                        log('>> formato ' + (d.dashboard ? 'Dashboard' : 'outro') + ' (meio ' + d.satMap.toFixed(1) + '% / células ' + d.cells + '/' + d.ncells + ') -> ' +
                             (d.dashboard ? 'live map' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
                         if (hub) hub.status();
                     }
                     if (!d.dashboard) {
-                        /* Weather/home: never mirror; only hold a previous real map frame. */
-                        if (d.widget || d.homeGrid) {
-                            if (a.holdLast && hold.has && hold.fromMap) {
-                                keepOrHide(d.widget ? 'widget/weather' : 'home/grid');
-                            } else {
-                                hold.has = false; hold.buf = null; hold.holding = false; hold.fromMap = false;
-                                apply(false);
-                                log('>> hide cluster (' + (d.widget ? 'weather/widget' : 'home/grid') + ')');
-                            }
-                        } else {
-                            keepOrHide('not Dashboard');
-                        }
+                        keepOrHide('not Dashboard');
                         if (a.once) return endOnce();
                         return setTimeout(tick, a.fmtInterval);
                     }
+                } else if (fmtState === false) {
+                    keepOrHide('not Dashboard');
+                    if (a.once) return endOnce();
+                    return setTimeout(tick, a.fmtInterval);
                 }
-                hold.holding = false;
-                apply(true);
+            }
+            hold.holding = false;
+            apply(true);
+            try {
                 const crop = activeCrop();
-                const mode = (gate.guidance === true ? 'nav' : 'free') + (layoutRail ? '+rail' : '');
+                const mode = gate.guidance === true ? 'nav' : 'free';
                 if (mode !== cropMode) {
                     cropMode = mode;
-                    log('>> crop ' + mode + ' ' + [crop.x, crop.y, crop.w, crop.h].join(','));
+                    log('>> crop ' + mode + ' ' + [crop.x, crop.y, crop.w, crop.h].join(',') +
+                        (mode === 'nav' ? ' (clip ETA / show far-ahead)' : ' (keep me-arrow)'));
                 }
                 if (a.mode === 'video') {
                     const atlas = processToYUV(img, { outW: outW, outH: outH, crop: crop, fit: a.fit, scale: a.scale, atlas: atlasBuf });
@@ -819,11 +676,7 @@ function main() {
                 }
                 if (a.verbose || frames % Math.max(1, Math.round(a.fps * 10)) === 0)
                     log('frame ' + frames + ' (' + img.width + 'x' + img.height + '->' + outW + 'x' + outH + ', ' + (Date.now() - t) + ' ms, ' + (frames / ((Date.now() - t0) / 1000)).toFixed(1) + ' fps)');
-            } catch (e) {
-                failStreak++;
-                log('tick falhou: ' + (e && e.message || e) + ' (streak ' + failStreak + ')');
-                keepOrHide('tick error');
-            }
+            } catch (e) { log('processamento falhou: ' + e.message); }
             if (a.once) return endOnce();
             setTimeout(tick, Math.max(0, a.interval - (Date.now() - t)));
         });
