@@ -439,11 +439,11 @@ function grab(a, cb) {
 /* ---------------------------------------------------------------- args */
 function parseArgs(argv) {
     const a = { socket: '/dev/shm/cluster-render/render.sock', target: 'map', fps: 3,
-        /* 1088x480 = 1:1. y raised vs old bottom crop so the puck sits nearer center (20+21/22).
-         * If a left icon rail is detected (21/22), crop.x shifts by railShift. */
-        crop: { x: 80, y: 160, w: 1088, h: 480 },
-        cropNav: { x: 80, y: 40, w: 1088, h: 480 },
-        railShift: 120,
+        /* 1088x480 = 1:1. Keep bottom framing so the blue me-arrow stays visible (y≈230),
+         * nudge right vs old x=80 so the map sits nearer center. Icon-rail (21/22) adds railShift. */
+        crop: { x: 140, y: 230, w: 1088, h: 480 },
+        cropNav: { x: 140, y: 50, w: 1088, h: 480 },
+        railShift: 80,
         fit: 'fill', scale: 'bilinear', order: 'bgra',
         capture: 'raw', mode: 'video', gate: true, gateInitial: 'front', wayland: 'wayland-0', xdg: '/run/wayland',
         capTool: '', screen: 'center', tmp: '', capW: 1920, capH: 720,

@@ -16,8 +16,8 @@ User=root
 Environment=WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/run/wayland PATH=/usr/bin:/bin
 # --gate-initial menu: no boot (sem CarPlay na frente) nao espelha nada ate o
 # CarPlay vir para a frente (evento PROJECTED). Video YUV; fps 7 near cluster-render budget.
-# 1088x480 1:1; y=160 centers puck better (20+21/22). Icon-rail auto-shifts +120 on 21/22.
-ExecStart=/usr/bin/node /var/opt/carplay-map/current/carplay-map-cluster.js --fps 7 --gate-initial menu --fit fill --crop 80,160,1088,480 --crop-nav 80,40,1088,480 --rail-shift 120 --scale bilinear
+# 1088x480 1:1; y=230 keeps blue me-arrow; x=140 nudges right vs old x=80. Rail +80 on 21/22.
+ExecStart=/usr/bin/node /var/opt/carplay-map/current/carplay-map-cluster.js --fps 7 --gate-initial menu --fit fill --crop 140,230,1088,480 --crop-nav 140,50,1088,480 --rail-shift 80 --scale bilinear
 Restart=on-failure
 # No boot o cluster-render/winston podem ainda nao estar prontos; 5 s mantem as
 # retentativas longe do limite de start do systemd.
