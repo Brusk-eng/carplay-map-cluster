@@ -171,14 +171,11 @@ function processImage(img, opts) {
 }
 
 /* ---------------------------------------------------------------- detector de formato (Dashboard do CarPlay) */
-/* Dashboard = mapa COLORIDO à esquerda + coluna de cards à direita. Dois testes:
- *  1) MEIO (mapa) colorido: % de pixels saturados (|max-min|>satTh) >= tMap.
- *  2) DIREITA não é mapa: a cor na direita tem que estar CONCENTRADA, não espalhada.
- *     Divide a coluna direita numa grade cols×rows; conta células "coloridas"
- *     (sat% > cellTh). Mapa em tela cheia espalha cor por ~todas as células (12-13/16);
- *     card de música concentra a capa em 1-2 células. Exige nº de células <= tCells.
- * Medido no carro: Dash 0-2 células, tela cheia 12-13 (margem grande). Robusto a
- * música/capa, mapa sem rota e zoom. Ordem de canais (rgba/bgra) não importa p/ max-min. */
+/* Classic (dark / high-chroma maps): saturated map pane + concentrated right cards.
+ * Light maps (Apple Maps day / CarPlay 21–22): almost white → classic sat% fails.
+ *   Accept when map-pane luma is high and a softer sat probe still sees some chroma.
+ *   Skip the right-cell test for light maps (map often bleeds into that probe).
+ * Still rejects dark media (Spotify): low luma + colorful tiles. */
 function satPct(img, x0, y0, x1, y1, satTh, step) {
     const X0 = (x0 * img.width) | 0, Y0 = (y0 * img.height) | 0, X1 = (x1 * img.width) | 0, Y1 = (y1 * img.height) | 0;
     const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
@@ -191,6 +188,17 @@ function satPct(img, x0, y0, x1, y1, satTh, step) {
         n++;
     }
     return n ? 100 * sat / n : 0;
+}
+function meanLuma(img, x0, y0, x1, y1, step) {
+    const X0 = (x0 * img.width) | 0, Y0 = (y0 * img.height) | 0, X1 = (x1 * img.width) | 0, Y1 = (y1 * img.height) | 0;
+    const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
+    const px = [0, 0, 0]; let sum = 0, n = 0;
+    for (let y = Y0; y < Y1; y += sy) for (let x = X0; x < X1; x += sx) {
+        readRGB(img, x, y, px);
+        sum += 0.299 * px[0] + 0.587 * px[1] + 0.114 * px[2];
+        n++;
+    }
+    return n ? sum / n : 0;
 }
 /* nº de células da coluna direita (grade cols×rows) com sat% acima de cellTh */
 function rightCells(img, f) {
@@ -205,7 +213,17 @@ function rightCells(img, f) {
 function detectDashboard(img, f) {
     const satMap = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.satTh, f.step);
     const cells = rightCells(img, f);
-    return { dashboard: satMap >= f.tMap && cells <= f.tCells, satMap: satMap, cells: cells, ncells: f.cols * f.rows };
+    const luma = meanLuma(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.step);
+    const lightLuma = f.lightLuma != null ? f.lightLuma : 200;
+    const lightSatTh = f.lightSatTh != null ? f.lightSatTh : 15;
+    const tMapLight = f.tMapLight != null ? f.tMapLight : 3;
+    const satLight = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, lightSatTh, f.step);
+    const classic = satMap >= f.tMap && cells <= f.tCells;
+    const lightMap = luma >= lightLuma && satLight >= tMapLight;
+    const darkMedia = luma < 120 && satMap >= f.tMap && cells > f.tCells;
+    const ok = !darkMedia && (classic || lightMap);
+    return { dashboard: ok, satMap: satMap, satLight: satLight, cells: cells, luma: luma,
+        lightMap: lightMap, ncells: f.cols * f.rows };
 }
 /* img (rgb/rgba/bgra) -> RGBA reto (p/ salvar com encodePNG em --calibrate/debug) */
 function toRGBA(img) {
@@ -409,7 +427,7 @@ function parseArgs(argv) {
         capTool: '', screen: 'center', tmp: '', capW: 1920, capH: 720,
         control: true, ctlSock: '/dev/shm/carplay-map/ctl.sock', requireGuidance: false,
         requireFormat: true, holdLast: true, calibrate: false,
-        fmt: { mapX0: 0.10, mapY0: 0.12, mapX1: 0.58, mapY1: 0.88, rX0: 0.645, rY0: 0.06, rX1: 0.985, rY1: 0.95, satTh: 40, tMap: 5, tCells: 7, cellTh: 15, cols: 4, rows: 4, step: 70 },
+        fmt: { mapX0: 0.12, mapY0: 0.08, mapX1: 0.70, mapY1: 0.92, rX0: 0.74, rY0: 0.06, rX1: 0.99, rY1: 0.95, satTh: 40, tMap: 5, tCells: 7, cellTh: 15, cols: 4, rows: 4, step: 70, lightLuma: 200, lightSatTh: 15, tMapLight: 3 },
         contend: true, once: false, infile: '', save: '', verbose: false };
     for (let i = 0; i < argv.length; i++) {
         const k = argv[i];
@@ -483,8 +501,12 @@ function main() {
         grab(a, (err, img) => {
             if (err) { console.error('captura falhou: ' + (err.message || err)); process.exit(1); }
             const d = detectDashboard(img, a.fmt);
-            log('CALIBRAÇÃO ' + img.width + 'x' + img.height + ': satMeio=' + d.satMap.toFixed(1) + '% células=' + d.cells + '/' + d.ncells + ' (satTh=' + a.fmt.satTh + ', cellTh=' + a.fmt.cellTh + ')');
-            log('limiares: meio>=' + a.fmt.tMap + '%  células<=' + a.fmt.tCells + '  ->  ' + (d.dashboard ? 'DASHBOARD (espelharia)' : 'NÃO-dashboard (esconderia)'));
+            log('CALIBRATE ' + img.width + 'x' + img.height + ': satMeio=' + d.satMap.toFixed(1) + '% satLight=' +
+                (d.satLight != null ? d.satLight.toFixed(1) : '?') + '% luma=' + (d.luma != null ? d.luma.toFixed(0) : '?') +
+                ' cells=' + d.cells + '/' + d.ncells + (d.lightMap ? ' lightMap' : ''));
+            log('thresholds: classic map>=' + a.fmt.tMap + '% right<=' + a.fmt.tCells +
+                ' OR light luma>=' + a.fmt.lightLuma + ' softSat>=' + a.fmt.tMapLight +
+                '%  ->  ' + (d.dashboard ? 'MAP (would mirror)' : 'NOT-map (hold/hide)'));
             if (a.save) { try { fs.writeFileSync(a.save, encodePNG(toRGBA(img), img.width, img.height)); log('frame salvo em ' + a.save); } catch (e) { log('save falhou: ' + e.message); } }
             process.exit(0);
         });
@@ -637,7 +659,9 @@ function main() {
                     const d = detectDashboard(img, a.fmt);
                     if (d.dashboard !== fmtState) {
                         fmtState = d.dashboard;
-                        log('>> formato ' + (d.dashboard ? 'Dashboard' : 'outro') + ' (meio ' + d.satMap.toFixed(1) + '% / células ' + d.cells + '/' + d.ncells + ') -> ' +
+                        log('>> formato ' + (d.dashboard ? (d.lightMap ? 'map-light' : 'map') : 'not-map') +
+                            ' (meio ' + d.satMap.toFixed(1) + '% soft ' + (d.satLight != null ? d.satLight.toFixed(1) : '?') +
+                            '% luma ' + (d.luma != null ? d.luma.toFixed(0) : '?') + ' / cells ' + d.cells + '/' + d.ncells + ') -> ' +
                             (d.dashboard ? 'live map' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
                         if (hub) hub.status();
                     }
