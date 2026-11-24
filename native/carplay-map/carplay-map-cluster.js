@@ -254,6 +254,30 @@ function detectIconRail(img, f) {
     const leftIcons = gridCells(img, 0.01, 0.12, 0.08, 0.88, 2, 6, 25, 18, f.step);
     return (mid - left) >= 35 && leftIcons >= 2;
 }
+/* Weather/clock widgets: warm smooth backgrounds (not textured map / satellite). */
+function warmSmoothWidget(img, f) {
+    const X0 = (f.mapX0 * img.width) | 0, Y0 = (f.mapY0 * img.height) | 0;
+    const X1 = (f.mapX1 * img.width) | 0, Y1 = (f.mapY1 * img.height) | 0;
+    const step = f.step || 70;
+    const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
+    const px = [0, 0, 0]; let n = 0, warm = 0, sumY = 0;
+    const ys = [];
+    for (let y = Y0; y < Y1; y += sy) for (let x = X0; x < X1; x += sx) {
+        readRGB(img, x, y, px);
+        const r = px[0], g = px[1], b = px[2];
+        const Y = 0.299 * r + 0.587 * g + 0.114 * b;
+        sumY += Y; ys.push(Y); n++;
+        if (r > g + 12 && r > b + 12 && r > 70) warm++;
+    }
+    if (!n) return false;
+    const mean = sumY / n;
+    let mad = 0;
+    for (let i = 0; i < ys.length; i++) mad += Math.abs(ys[i] - mean);
+    mad /= n;
+    const warmFrac = warm / n;
+    /* Warm + smooth = weather/clock. Warm + textured (high mad) = desert satellite map — keep. */
+    return warmFrac >= 0.38 && mad < 32;
+}
 function detectDashboard(img, f) {
     const satMap = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.satTh, f.step);
     const cells = rightCells(img, f);
@@ -266,14 +290,16 @@ function detectDashboard(img, f) {
     const satLight = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, lightSatTh, f.step);
     const rail = detectIconRail(img, f);
     const homeGrid = icons >= tIcon;
-    const classic = satMap >= f.tMap && cells <= f.tCells && !homeGrid;
-    const lightMap = luma >= lightLuma && satLight >= tMapLight && !homeGrid;
-    /* Waze / sat maps on 21/22 Dashboard: colorful map + icon rail, not home tiles. */
-    const dashMap = rail && !homeGrid && (satMap >= 2 || satLight >= 2 || luma >= 70) && cells <= Math.max(f.tCells, 10);
+    const widget = warmSmoothWidget(img, f);
+    const classic = satMap >= f.tMap && cells <= f.tCells && !homeGrid && !widget;
+    const lightMap = luma >= lightLuma && satLight >= tMapLight && !homeGrid && !widget;
+    /* Waze on 21/22 Dashboard: need real map chroma, not “any screen with a rail”. */
+    const dashMap = rail && !homeGrid && !widget && cells <= Math.max(f.tCells, 10) &&
+        (satMap >= f.tMap || (luma >= lightLuma && satLight >= tMapLight) || satMap >= 4);
     const darkMedia = luma < 120 && satMap >= f.tMap && cells > f.tCells && !rail;
-    const ok = !darkMedia && !homeGrid && (classic || lightMap || dashMap);
+    const ok = !darkMedia && !homeGrid && !widget && (classic || lightMap || dashMap);
     return { dashboard: ok, satMap: satMap, satLight: satLight, cells: cells, icons: icons, luma: luma,
-        lightMap: lightMap, dashMap: dashMap, rail: rail, homeGrid: homeGrid, ncells: f.cols * f.rows };
+        lightMap: lightMap, dashMap: dashMap, rail: rail, homeGrid: homeGrid, widget: widget, ncells: f.cols * f.rows };
 }
 /* img (rgb/rgba/bgra) -> RGBA reto (p/ salvar com encodePNG em --calibrate/debug) */
 function toRGBA(img) {
@@ -557,9 +583,10 @@ function main() {
             log('CALIBRATE ' + img.width + 'x' + img.height + ': satMeio=' + d.satMap.toFixed(1) + '% satLight=' +
                 (d.satLight != null ? d.satLight.toFixed(1) : '?') + '% luma=' + (d.luma != null ? d.luma.toFixed(0) : '?') +
                 ' cells=' + d.cells + '/' + d.ncells + ' icons=' + d.icons +
-                (d.lightMap ? ' lightMap' : '') + (d.rail ? ' rail' : '') + (d.homeGrid ? ' HOME' : ''));
-            log('thresholds: classic/light + icons<' + a.fmt.tIcon +
-                '  ->  ' + (d.dashboard ? 'MAP (would mirror)' : 'NOT-map (hold/hide)'));
+                (d.lightMap ? ' lightMap' : '') + (d.rail ? ' rail' : '') +
+                (d.homeGrid ? ' HOME' : '') + (d.widget ? ' WIDGET' : ''));
+            log('thresholds: map only (reject home/weather)  ->  ' +
+                (d.dashboard ? 'MAP (would mirror)' : 'NOT-map (hold/hide)'));
             if (a.save) { try { fs.writeFileSync(a.save, encodePNG(toRGBA(img), img.width, img.height)); log('frame salvo em ' + a.save); } catch (e) { log('save falhou: ' + e.message); } }
             process.exit(0);
         });
@@ -709,7 +736,7 @@ function main() {
                     return setTimeout(tick, Math.min(2000, 400 + failStreak * 200));
                 }
                 failStreak = 0;
-                /* Format every frame so home-swipe holds last map immediately (20 + 21/22). */
+                /* Format every frame so home/weather swipe holds last map immediately (20 + 21/22). */
                 if (a.requireFormat) {
                     const d = detectDashboard(img, a.fmt);
                     if (!!d.rail !== layoutRail) {
@@ -718,7 +745,8 @@ function main() {
                     }
                     if (d.dashboard !== fmtState) {
                         fmtState = d.dashboard;
-                        log('>> formato ' + (d.dashboard ? (d.lightMap ? 'map-light' : (d.dashMap ? 'map-dash' : 'map')) : (d.homeGrid ? 'home/grid' : 'not-map')) +
+                        log('>> formato ' + (d.dashboard ? (d.lightMap ? 'map-light' : (d.dashMap ? 'map-dash' : 'map')) :
+                            (d.homeGrid ? 'home/grid' : (d.widget ? 'widget/weather' : 'not-map'))) +
                             ' (meio ' + d.satMap.toFixed(1) + '% soft ' + (d.satLight != null ? d.satLight.toFixed(1) : '?') +
                             '% luma ' + (d.luma != null ? d.luma.toFixed(0) : '?') +
                             ' flatIcons ' + d.icons + ' / cells ' + d.cells + '/' + d.ncells + ') -> ' +
@@ -726,7 +754,7 @@ function main() {
                         if (hub) hub.status();
                     }
                     if (!d.dashboard) {
-                        keepOrHide(d.homeGrid ? 'home/grid' : 'not Dashboard');
+                        keepOrHide(d.homeGrid ? 'home/grid' : (d.widget ? 'widget/weather' : 'not Dashboard'));
                         if (a.once) return endOnce();
                         return setTimeout(tick, a.fmtInterval);
                     }

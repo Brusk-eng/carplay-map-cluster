@@ -4,7 +4,7 @@ Mirrors the **CarPlay Dashboard map** onto the BMW **iDrive 7 / MGU** instrument
 
 | | |
 |---|---|
-| Tool | `carplay-map` **0.2.14** |
+| Tool | `carplay-map` **0.2.15** |
 | Toggle app | `carplay_map_toggle` **0.1.1** (“Map on cluster”) |
 | Catalog | `mgu-repo.json` (MGU Store **Add source** works) |
 | Repo | [Brusk-eng/carplay-map-cluster](https://github.com/Brusk-eng/carplay-map-cluster) |
@@ -76,7 +76,7 @@ This tool **blocks** if `/var/opt/waze-on-cluster/current` exists:
 1. Uninstall **waze-on-cluster** (and its Maps-on-cluster app) if present  
 2. Store → Settings → **+ Add source** → `Brusk-eng/carplay-map-cluster` → branch **main**  
 3. Install **cluster-render** (if missing) and **app-privacy**  
-4. Install **CarPlay map → cluster** (`carplay-map` **0.2.14**)  
+4. Install **CarPlay map → cluster** (`carplay-map` **0.2.15**)  
 5. Install **Map on cluster** (`carplay_map_toggle`)  
 6. Connect iPhone CarPlay → open a map in **Dashboard** layout (map left + cards right)  
 7. Look at the instrument cluster  
