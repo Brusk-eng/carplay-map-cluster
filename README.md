@@ -4,7 +4,7 @@ Mirrors the **CarPlay Dashboard map** onto the BMW **iDrive 7 / MGU** instrument
 
 | | |
 |---|---|
-| Tool | `carplay-map` **0.2.15** |
+| Tool | `carplay-map` **0.2.16** |
 | Toggle app | `carplay_map_toggle` **0.1.1** (“Map on cluster”) |
 | Catalog | `mgu-repo.json` (MGU Store **Add source** works) |
 | Repo | [Brusk-eng/carplay-map-cluster](https://github.com/Brusk-eng/carplay-map-cluster) |
@@ -76,7 +76,7 @@ This tool **blocks** if `/var/opt/waze-on-cluster/current` exists:
 1. Uninstall **waze-on-cluster** (and its Maps-on-cluster app) if present  
 2. Store → Settings → **+ Add source** → `Brusk-eng/carplay-map-cluster` → branch **main**  
 3. Install **cluster-render** (if missing) and **app-privacy**  
-4. Install **CarPlay map → cluster** (`carplay-map` **0.2.15**)  
+4. Install **CarPlay map → cluster** (`carplay-map` **0.2.16**)  
 5. Install **Map on cluster** (`carplay_map_toggle`)  
 6. Connect iPhone CarPlay → open a map in **Dashboard** layout (map left + cards right)  
 7. Look at the instrument cluster  
@@ -99,9 +99,10 @@ The script refuses if `waze-on-cluster` is current, packs the tool with correct 
 ## Using it
 
 - CarPlay must stay **visible** (BMW menu in front → nothing to capture → blank)  
-- Use **Dashboard** map layout (fullscreen map is gated off on purpose)
-- **No-route “me” puck:** default crop matches cluster aspect + bilinear scale so the free-drive cursor is less likely to vanish (route-on was already fine)
-- **Hold last map** (default): leave Dashboard (e.g. Spotify) → cluster keeps a **frozen** last map until Dashboard returns; toggle Off clears it  
+- Use **Dashboard** only: map left + cards right (Google / Waze / Apple). Fullscreen Maps, home grid, weather/widgets are **not** mirrored  
+- Swipe away from the map → cluster **holds the last map** (does not show weather/music pages)  
+- **No-route “me” puck:** bottom-ish crop keeps the blue arrow visible; 21/22 icon-rail auto-shifts right  
+
 - Toggle with **Map on cluster**; service auto-starts on boot (`--gate-initial menu`)  
 - If crop/detection looks wrong on your CarPlay build, calibrate on the unit:
 

@@ -1,9 +1,9 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "title": "CarPlay no cluster (produtor)",
-  "description": "Mirrors CarPlay map Dashboard only (Google/Waze/Apple) on 20\u201322. Rejects home + weather/widgets (holds last map).",
+  "description": "CarPlay Dashboard map mirror (20\u201322): Google/Waze/Apple. Rejects home/weather. Nav-blue + cards detection; hold last map off-Dashboard.",
   "mguHmi": [
     "ID7"
   ],

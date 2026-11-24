@@ -254,11 +254,9 @@ function detectIconRail(img, f) {
     const leftIcons = gridCells(img, 0.01, 0.12, 0.08, 0.88, 2, 6, 25, 18, f.step);
     return (mid - left) >= 35 && leftIcons >= 2;
 }
-/* Weather/clock widgets: warm smooth backgrounds (not textured map / satellite). */
-function warmSmoothWidget(img, f) {
-    const X0 = (f.mapX0 * img.width) | 0, Y0 = (f.mapY0 * img.height) | 0;
-    const X1 = (f.mapX1 * img.width) | 0, Y1 = (f.mapY1 * img.height) | 0;
-    const step = f.step || 70;
+/* Region stats: warmFrac + luma MAD (smooth gradients vs textured maps). */
+function regionWarmMad(img, x0, y0, x1, y1, step) {
+    const X0 = (x0 * img.width) | 0, Y0 = (y0 * img.height) | 0, X1 = (x1 * img.width) | 0, Y1 = (y1 * img.height) | 0;
     const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
     const px = [0, 0, 0]; let n = 0, warm = 0, sumY = 0;
     const ys = [];
@@ -269,14 +267,35 @@ function warmSmoothWidget(img, f) {
         sumY += Y; ys.push(Y); n++;
         if (r > g + 12 && r > b + 12 && r > 70) warm++;
     }
-    if (!n) return false;
+    if (!n) return { warm: 0, mad: 0 };
     const mean = sumY / n;
     let mad = 0;
     for (let i = 0; i < ys.length; i++) mad += Math.abs(ys[i] - mean);
-    mad /= n;
-    const warmFrac = warm / n;
-    /* Warm + smooth = weather/clock. Warm + textured (high mad) = desert satellite map — keep. */
-    return warmFrac >= 0.38 && mad < 32;
+    return { warm: warm / n, mad: mad / n };
+}
+/* Blue/cyan from me-arrow, routes, water — strong “this is a map” hint. */
+function navBlueFrac(img, f) {
+    const X0 = (f.mapX0 * img.width) | 0, Y0 = (f.mapY0 * img.height) | 0;
+    const X1 = (f.mapX1 * img.width) | 0, Y1 = (f.mapY1 * img.height) | 0;
+    const step = Math.max(40, (f.step || 70) - 10);
+    const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
+    const px = [0, 0, 0]; let n = 0, blue = 0;
+    for (let y = Y0; y < Y1; y += sy) for (let x = X0; x < X1; x += sx) {
+        readRGB(img, x, y, px);
+        const r = px[0], g = px[1], b = px[2];
+        n++;
+        if (b > r + 18 && b > g - 5 && b > 90 && b - Math.min(r, g) > 25) blue++;
+        else if (b > 140 && g > 100 && r < 100 && b >= g) blue++; /* cyan route */
+    }
+    return n ? blue / n : 0;
+}
+/* Weather/clock: warm smooth pane, usually also on the right — and little nav-blue. */
+function isWeatherWidget(img, f) {
+    const mid = regionWarmMad(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.step || 70);
+    const right = regionWarmMad(img, f.rX0, f.rY0, f.rX1, f.rY1, f.step || 70);
+    const midWarmSmooth = mid.warm >= 0.36 && mid.mad < 34;
+    const rightWarmSmooth = right.warm >= 0.28 && right.mad < 36;
+    return midWarmSmooth && rightWarmSmooth;
 }
 function detectDashboard(img, f) {
     const satMap = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.satTh, f.step);
@@ -289,17 +308,20 @@ function detectDashboard(img, f) {
     const tIcon = f.tIcon != null ? f.tIcon : 4;
     const satLight = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, lightSatTh, f.step);
     const rail = detectIconRail(img, f);
+    const navBlue = navBlueFrac(img, f);
     const homeGrid = icons >= tIcon;
-    const widget = warmSmoothWidget(img, f);
-    const classic = satMap >= f.tMap && cells <= f.tCells && !homeGrid && !widget;
-    const lightMap = luma >= lightLuma && satLight >= tMapLight && !homeGrid && !widget;
-    /* Waze on 21/22 Dashboard: need real map chroma, not “any screen with a rail”. */
-    const dashMap = rail && !homeGrid && !widget && cells <= Math.max(f.tCells, 10) &&
-        (satMap >= f.tMap || (luma >= lightLuma && satLight >= tMapLight) || satMap >= 4);
-    const darkMedia = luma < 120 && satMap >= f.tMap && cells > f.tCells && !rail;
-    const ok = !darkMedia && !homeGrid && !widget && (classic || lightMap || dashMap);
+    const widget = isWeatherWidget(img, f) && navBlue < 0.006;
+    const cardsOk = cells <= Math.max(f.tCells, 9);
+    const classic = satMap >= f.tMap && cardsOk && !homeGrid && !widget;
+    const lightMap = luma >= lightLuma && satLight >= tMapLight && cardsOk && !homeGrid && !widget;
+    const blueMap = navBlue >= 0.008 && cardsOk && !homeGrid && !widget;
+    const dashMap = rail && cardsOk && !homeGrid && !widget &&
+        (satMap >= f.tMap || lightMap || blueMap || satMap >= 4);
+    const darkMedia = luma < 120 && satMap >= f.tMap && cells > f.tCells && !rail && !blueMap;
+    const ok = !darkMedia && !homeGrid && !widget && (classic || lightMap || blueMap || dashMap);
     return { dashboard: ok, satMap: satMap, satLight: satLight, cells: cells, icons: icons, luma: luma,
-        lightMap: lightMap, dashMap: dashMap, rail: rail, homeGrid: homeGrid, widget: widget, ncells: f.cols * f.rows };
+        navBlue: navBlue, lightMap: lightMap, dashMap: dashMap, blueMap: blueMap,
+        rail: rail, homeGrid: homeGrid, widget: widget, ncells: f.cols * f.rows };
 }
 /* img (rgb/rgba/bgra) -> RGBA reto (p/ salvar com encodePNG em --calibrate/debug) */
 function toRGBA(img) {
@@ -745,11 +767,12 @@ function main() {
                     }
                     if (d.dashboard !== fmtState) {
                         fmtState = d.dashboard;
-                        log('>> formato ' + (d.dashboard ? (d.lightMap ? 'map-light' : (d.dashMap ? 'map-dash' : 'map')) :
+                        log('>> formato ' + (d.dashboard ? (d.blueMap ? 'map-blue' : (d.lightMap ? 'map-light' : (d.dashMap ? 'map-dash' : 'map'))) :
                             (d.homeGrid ? 'home/grid' : (d.widget ? 'widget/weather' : 'not-map'))) +
                             ' (meio ' + d.satMap.toFixed(1) + '% soft ' + (d.satLight != null ? d.satLight.toFixed(1) : '?') +
                             '% luma ' + (d.luma != null ? d.luma.toFixed(0) : '?') +
-                            ' flatIcons ' + d.icons + ' / cells ' + d.cells + '/' + d.ncells + ') -> ' +
+                            ' navBlue ' + (d.navBlue != null ? (100 * d.navBlue).toFixed(1) : '?') +
+                            '% flatIcons ' + d.icons + ' / cells ' + d.cells + '/' + d.ncells + ') -> ' +
                             (d.dashboard ? 'live map' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
                         if (hub) hub.status();
                     }
