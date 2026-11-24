@@ -5,7 +5,7 @@
       "id": "carplay-map",
       "kind": "tool",
       "title": "CarPlay map \u2192 cluster",
-      "version": "0.2.19",
+      "version": "0.2.20",
       "path": "native/carplay-map",
       "mguHmi": [
         "ID7"
@@ -28,7 +28,7 @@
       ],
       "uninstallable": true,
       "requires": {
-        "carplay-map": "0.2.19",
+        "carplay-map": "0.2.20",
         "app-privacy": "1.0.0"
       }
     }

@@ -1,9 +1,9 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "title": "CarPlay map \u2192 cluster",
-  "description": "Center Dashboard map on cluster (crop x=140,y=220). Same 0.2.10 mirror path; no format detectors.",
+  "description": "Reject CarPlay weather/widgets; hold last map. Centered crop (140,220). 0.2.10 mirror path + weather gate.",
   "mguHmi": [
     "ID7"
   ],

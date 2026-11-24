@@ -202,10 +202,64 @@ function rightCells(img, f) {
     }
     return nc;
 }
+/* Warm-smooth copper/brown panes (clock + weather + sunrise). Textured maps keep higher MAD. */
+function regionWarmMad(img, x0, y0, x1, y1, step) {
+    const X0 = (x0 * img.width) | 0, Y0 = (y0 * img.height) | 0, X1 = (x1 * img.width) | 0, Y1 = (y1 * img.height) | 0;
+    const sx = Math.max(1, ((X1 - X0) / Math.max(1, step)) | 0), sy = Math.max(1, ((Y1 - Y0) / Math.max(1, step)) | 0);
+    const px = [0, 0, 0]; let n = 0, warm = 0, sumY = 0;
+    const ys = [];
+    for (let y = Y0; y < Y1; y += sy) for (let x = X0; x < X1; x += sx) {
+        readRGB(img, x, y, px);
+        const r = px[0], g = px[1], b = px[2];
+        const Y = 0.299 * r + 0.587 * g + 0.114 * b;
+        sumY += Y; ys.push(Y); n++;
+        if (r > g + 12 && r > b + 12 && r > 70) warm++;
+    }
+    if (!n) return { warm: 0, mad: 0 };
+    const mean = sumY / n;
+    let mad = 0;
+    for (let i = 0; i < ys.length; i++) mad += Math.abs(ys[i] - mean);
+    return { warm: warm / n, mad: mad / n };
+}
+/* Me-arrow / route / water cyan-blue — positive “this is a map” signal. */
+function navBlueFrac(img, f) {
+    const X0 = (f.mapX0 * img.width) | 0, Y0 = (f.mapY0 * img.height) | 0;
+    const X1 = (f.mapX1 * img.width) | 0, Y1 = (f.mapY1 * img.height) | 0;
+    const step = Math.max(40, (f.step || 70) - 10);
+    const sx = Math.max(1, ((X1 - X0) / step) | 0), sy = Math.max(1, ((Y1 - Y0) / step) | 0);
+    const px = [0, 0, 0]; let n = 0, blue = 0;
+    for (let y = Y0; y < Y1; y += sy) for (let x = X0; x < X1; x += sx) {
+        readRGB(img, x, y, px);
+        const r = px[0], g = px[1], b = px[2];
+        n++;
+        if (b > r + 18 && b > g - 5 && b > 90 && b - Math.min(r, g) > 25) blue++;
+        else if (b > 140 && g > 100 && r < 100 && b >= g) blue++;
+    }
+    return n ? blue / n : 0;
+}
+function isWeatherWidget(img, f) {
+    const mid = regionWarmMad(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.step || 70);
+    const right = regionWarmMad(img, f.rX0, f.rY0, f.rX1, f.rY1, f.step || 70);
+    /* Full weather/clock page paints copper mid + warm right. Maps keep right cards cool/gray. */
+    if (mid.warm >= 0.32 && mid.mad < 45 && right.warm >= 0.22 && right.mad < 48) return true;
+    if (mid.warm >= 0.40 && right.warm >= 0.30) return true;
+    if (mid.warm >= 0.45 && mid.mad < 38) return true;
+    return false;
+}
 function detectDashboard(img, f) {
     const satMap = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.satTh, f.step);
     const cells = rightCells(img, f);
-    return { dashboard: satMap >= f.tMap && cells <= f.tCells, satMap: satMap, cells: cells, ncells: f.cols * f.rows };
+    const navBlue = navBlueFrac(img, f);
+    /* Weather/clock pages: warm-smooth + almost no nav-blue. Real Waze/Maps keep blue or fail warm. */
+    const widget = isWeatherWidget(img, f) && navBlue < 0.006;
+    const classic = satMap >= f.tMap && cells <= f.tCells && !widget;
+    /* Tiny nav-blue with card column = map Dashboard even if sat is soft (dark Waze). */
+    const blueMap = navBlue >= 0.008 && cells <= Math.max(f.tCells, 9) && !widget;
+    const dashboard = !widget && (classic || blueMap);
+    return {
+        dashboard: dashboard, satMap: satMap, cells: cells, ncells: f.cols * f.rows,
+        navBlue: navBlue, widget: widget, classic: classic, blueMap: blueMap
+    };
 }
 /* img (rgb/rgba/bgra) -> RGBA reto (p/ salvar com encodePNG em --calibrate/debug) */
 function toRGBA(img) {
@@ -464,7 +518,9 @@ function runOffline(a, outW, outH) {
     const img = /\.png$/i.test(a.infile) ? decodePNG(buf) : readRaw(buf, a.capW, a.capH, a.order);
     log('offline: ' + img.width + 'x' + img.height + ' (' + (img.bgr ? 'bgra' : 'rgb/rgba') + ', modo ' + a.mode + ') de ' + a.infile);
     const df = detectDashboard(img, a.fmt);
-    log('offline formato: satMeio=' + df.satMap.toFixed(1) + '% células=' + df.cells + '/' + df.ncells + ' (satTh=' + a.fmt.satTh + ', tMap=' + a.fmt.tMap + ' tCells=' + a.fmt.tCells + ') -> ' + (df.dashboard ? 'DASHBOARD (espelha)' : 'NÃO-dashboard (esconde)'));
+    log('offline formato: satMeio=' + df.satMap.toFixed(1) + '% navBlue=' + (100 * df.navBlue).toFixed(1) +
+        '% células=' + df.cells + '/' + df.ncells + (df.widget ? ' WIDGET' : '') +
+        ' -> ' + (df.dashboard ? 'DASHBOARD (espelha)' : 'NÃO-dashboard (hold/esconde)'));
     let rgba;
     if (a.mode === 'video') rgba = yuvAtlasToRGBA(processToYUV(img, { outW: outW, outH: outH, crop: a.crop, fit: a.fit, scale: a.scale }), outW, outH);
     else rgba = processImage(img, { outW: outW, outH: outH, crop: a.crop, fit: a.fit, scale: a.scale }).rgba;
@@ -483,8 +539,11 @@ function main() {
         grab(a, (err, img) => {
             if (err) { console.error('captura falhou: ' + (err.message || err)); process.exit(1); }
             const d = detectDashboard(img, a.fmt);
-            log('CALIBRAÇÃO ' + img.width + 'x' + img.height + ': satMeio=' + d.satMap.toFixed(1) + '% células=' + d.cells + '/' + d.ncells + ' (satTh=' + a.fmt.satTh + ', cellTh=' + a.fmt.cellTh + ')');
-            log('limiares: meio>=' + a.fmt.tMap + '%  células<=' + a.fmt.tCells + '  ->  ' + (d.dashboard ? 'DASHBOARD (espelharia)' : 'NÃO-dashboard (esconderia)'));
+            log('CALIBRAÇÃO ' + img.width + 'x' + img.height + ': satMeio=' + d.satMap.toFixed(1) +
+                '% navBlue=' + (100 * d.navBlue).toFixed(1) + '% células=' + d.cells + '/' + d.ncells +
+                (d.widget ? ' WIDGET' : '') + (d.blueMap ? ' blueMap' : ''));
+            log('limiares: map Dashboard only (reject weather/widgets)  ->  ' +
+                (d.dashboard ? 'MAP (would mirror)' : 'NOT-map (hold/hide)'));
             if (a.save) { try { fs.writeFileSync(a.save, encodePNG(toRGBA(img), img.width, img.height)); log('frame salvo em ' + a.save); } catch (e) { log('save falhou: ' + e.message); } }
             process.exit(0);
         });
@@ -544,7 +603,7 @@ function main() {
 
     const ctlState = { masterEnabled: true };
     let hub = null;
-    let hold = { has: false, kind: null, buf: null, holding: false };
+    let hold = { has: false, kind: null, buf: null, holding: false, fromMap: false };
     let cropMode = null;
     function activeCrop() {
         return (gate.guidance === true) ? a.cropNav : a.crop;
@@ -557,10 +616,9 @@ function main() {
     function ctlStatus() {
         const fmtOk = !a.requireFormat || fmtState === true;
         const live = ctlState.masterEnabled && gate.front && (!a.requireGuidance || gate.guidance !== false) && fmtOk;
-        const holding = !!(a.holdLast && hold.has && ctlState.masterEnabled && !live);
-        const mirror = live || holding;
+        const holding = !!(a.holdLast && hold.has && hold.fromMap && ctlState.masterEnabled && !live);
         return { ev: 'status', state: !ctlState.masterEnabled ? 'off' : (live ? 'on' : (holding ? 'holding' : 'standby')),
-            mode: 'mirror', note: 'Dashboard map mirror; hold-last keeps a frozen map when you leave Dashboard',
+            mode: 'mirror', note: 'Dashboard map only; weather/widgets hold last map (never live)',
             enabled: ctlState.masterEnabled, carplay: !!gate.front, guidance: gate.guidance, format: fmtState,
             holding: holding };
     }
@@ -568,20 +626,20 @@ function main() {
         if (cmd === 'enable') ctlState.masterEnabled = true;
         else if (cmd === 'disable') {
             ctlState.masterEnabled = false;
-            hold.has = false; hold.buf = null; hold.holding = false;
+            hold.has = false; hold.buf = null; hold.holding = false; hold.fromMap = false;
         }
         log('>> controle: ' + cmd);
     }, log) : null;
 
     let stopped = false, frames = 0, t0 = Date.now(), shownState = null;
-    let atlasBuf = null, holdSavedAt = 0, fmtTick = 0;
+    let atlasBuf = null, holdSavedAt = 0;
     const HOLD_MS = 250;
     function apply(want) {
         if (want && shownState !== true) { cr.set(ref, { visible: true }); shownState = true; }
         else if (!want && shownState !== false) { cr.set(ref, { visible: false }); shownState = false; }
     }
     function pushHeld() {
-        if (!hold.has || !hold.buf) return;
+        if (!hold.has || !hold.buf || !hold.fromMap) return;
         apply(true);
         try {
             if (hold.kind === 'video') cr.frame(ref, hold.buf, frames);
@@ -589,13 +647,14 @@ function main() {
         } catch (e) { log('hold re-push failed: ' + e.message); }
     }
     function saveHold(kind, buf) {
-        hold.has = true; hold.kind = kind;
+        /* Only real map frames may become the hold buffer (never weather/widgets). */
+        hold.has = true; hold.kind = kind; hold.fromMap = true;
         const now = Date.now();
         if (!hold.buf || hold.buf.length !== buf.length) hold.buf = Buffer.alloc(buf.length);
         if (now - holdSavedAt >= HOLD_MS) { buf.copy(hold.buf); holdSavedAt = now; }
     }
     function keepOrHide(why) {
-        if (a.holdLast && hold.has && ctlState.masterEnabled) {
+        if (a.holdLast && hold.has && hold.fromMap && ctlState.masterEnabled) {
             if (!hold.holding) {
                 hold.holding = true;
                 log('>> hold last map (' + why + ')');
@@ -612,7 +671,7 @@ function main() {
     function tick() {
         if (stopped) return;
         if (!ctlState.masterEnabled) {
-            hold.has = false; hold.buf = null; hold.holding = false;
+            hold.has = false; hold.buf = null; hold.holding = false; hold.fromMap = false;
             apply(false); setTimeout(tick, 400); return;
         }
         /* Live capture only while CarPlay is in front (+ guidance if required). */
@@ -629,25 +688,31 @@ function main() {
                 if (a.once) return endOnce();
                 return setTimeout(tick, 500);
             }
-            /* Format gate: only *update* from Dashboard; otherwise hold last map.
-             * While already on Dashboard, re-check every 3rd frame to cut latency. */
+            /* Format every frame: map Dashboard live; weather/widgets/home → hold last map only. */
             if (a.requireFormat) {
-                const recheck = fmtState !== true || ((++fmtTick) % 3) === 0;
-                if (recheck) {
-                    const d = detectDashboard(img, a.fmt);
-                    if (d.dashboard !== fmtState) {
-                        fmtState = d.dashboard;
-                        log('>> formato ' + (d.dashboard ? 'Dashboard' : 'outro') + ' (meio ' + d.satMap.toFixed(1) + '% / células ' + d.cells + '/' + d.ncells + ') -> ' +
-                            (d.dashboard ? 'live map' : (a.holdLast && hold.has ? 'hold last map' : 'hide')));
-                        if (hub) hub.status();
-                    }
-                    if (!d.dashboard) {
+                const d = detectDashboard(img, a.fmt);
+                if (d.dashboard !== fmtState) {
+                    fmtState = d.dashboard;
+                    const label = d.dashboard
+                        ? (d.blueMap && !d.classic ? 'map-blue' : 'Dashboard')
+                        : (d.widget ? 'widget/weather' : 'outro');
+                    log('>> formato ' + label + ' (meio ' + d.satMap.toFixed(1) + '% navBlue ' +
+                        (100 * d.navBlue).toFixed(1) + '% / células ' + d.cells + '/' + d.ncells + ') -> ' +
+                        (d.dashboard ? 'live map' : (a.holdLast && hold.has && hold.fromMap ? 'hold last map' : 'hide')));
+                    if (hub) hub.status();
+                }
+                if (!d.dashboard) {
+                    if (d.widget) {
+                        if (!(a.holdLast && hold.has && hold.fromMap)) {
+                            hold.has = false; hold.buf = null; hold.holding = false; hold.fromMap = false;
+                            apply(false);
+                            log('>> hide cluster (weather/widget)');
+                        } else {
+                            keepOrHide('widget/weather');
+                        }
+                    } else {
                         keepOrHide('not Dashboard');
-                        if (a.once) return endOnce();
-                        return setTimeout(tick, a.fmtInterval);
                     }
-                } else if (fmtState === false) {
-                    keepOrHide('not Dashboard');
                     if (a.once) return endOnce();
                     return setTimeout(tick, a.fmtInterval);
                 }
@@ -689,4 +754,7 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { decodePNG, encodePNG, readRaw, processImage, detectDashboard, satPct };
+module.exports = {
+    decodePNG, encodePNG, readRaw, processImage, detectDashboard, satPct,
+    isWeatherWidget, navBlueFrac, regionWarmMad, rightCells
+};
