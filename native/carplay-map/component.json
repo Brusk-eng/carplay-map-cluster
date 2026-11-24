@@ -1,9 +1,9 @@
 {
   "id": "carplay-map",
   "kind": "tool",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "title": "CarPlay map \u2192 cluster",
-  "description": "CarPlay Dashboard map mirror (20\u201322): Google/Waze/Apple. Rejects home/weather. Nav-blue + cards detection; hold last map off-Dashboard.",
+  "description": "CarPlay map Dashboard only. Blocks weather/clock/home from the cluster; holds last real map when you leave Maps/Waze/Google.",
   "mguHmi": [
     "ID7"
   ],

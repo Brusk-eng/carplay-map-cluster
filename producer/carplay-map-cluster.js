@@ -289,13 +289,17 @@ function navBlueFrac(img, f) {
     }
     return n ? blue / n : 0;
 }
-/* Weather/clock: warm smooth pane, usually also on the right — and little nav-blue. */
+/* Weather/clock CarPlay pages: copper/brown smooth gradients (often clock + stats + sunset).
+ * Real maps are cooler/textured or have nav-blue; Dashboard cards on the right are cool gray. */
 function isWeatherWidget(img, f) {
     const mid = regionWarmMad(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.step || 70);
     const right = regionWarmMad(img, f.rX0, f.rY0, f.rX1, f.rY1, f.step || 70);
-    const midWarmSmooth = mid.warm >= 0.36 && mid.mad < 34;
-    const rightWarmSmooth = right.warm >= 0.28 && right.mad < 36;
-    return midWarmSmooth && rightWarmSmooth;
+    const midHot = mid.warm >= 0.32 && mid.mad < 40;
+    const rightHot = right.warm >= 0.20 && right.mad < 42;
+    /* Full weather page paints the right column too; map+music keeps right cards cool/gray. */
+    if (midHot && rightHot) return true;
+    if (mid.warm >= 0.42 && mid.mad < 34) return true;
+    return false;
 }
 function detectDashboard(img, f) {
     const satMap = satPct(img, f.mapX0, f.mapY0, f.mapX1, f.mapY1, f.satTh, f.step);
@@ -668,7 +672,7 @@ function main() {
 
     const ctlState = { masterEnabled: true };
     let hub = null;
-    let hold = { has: false, kind: null, buf: null, holding: false };
+    let hold = { has: false, kind: null, buf: null, holding: false, fromMap: false };
     let cropMode = null, layoutRail = false;
     function activeCrop() {
         const base = (gate.guidance === true) ? a.cropNav : a.crop;
@@ -694,7 +698,7 @@ function main() {
         if (cmd === 'enable') ctlState.masterEnabled = true;
         else if (cmd === 'disable') {
             ctlState.masterEnabled = false;
-            hold.has = false; hold.buf = null; hold.holding = false;
+            hold.has = false; hold.buf = null; hold.holding = false; hold.fromMap = false;
         }
         log('>> controle: ' + cmd);
     }, log) : null;
@@ -715,7 +719,7 @@ function main() {
         } catch (e) { log('hold re-push failed: ' + e.message); }
     }
     function saveHold(kind, buf) {
-        hold.has = true; hold.kind = kind;
+        hold.has = true; hold.kind = kind; hold.fromMap = true;
         const now = Date.now();
         if (!hold.buf || hold.buf.length !== buf.length) hold.buf = Buffer.alloc(buf.length);
         if (now - holdSavedAt >= HOLD_MS) { buf.copy(hold.buf); holdSavedAt = now; }
@@ -738,7 +742,7 @@ function main() {
     function tick() {
         if (stopped) return;
         if (!ctlState.masterEnabled) {
-            hold.has = false; hold.buf = null; hold.holding = false;
+            hold.has = false; hold.buf = null; hold.holding = false; hold.fromMap = false;
             apply(false); setTimeout(tick, 400); return;
         }
         /* Live capture only while CarPlay is in front (+ guidance if required). */
@@ -777,7 +781,18 @@ function main() {
                         if (hub) hub.status();
                     }
                     if (!d.dashboard) {
-                        keepOrHide(d.homeGrid ? 'home/grid' : (d.widget ? 'widget/weather' : 'not Dashboard'));
+                        /* Weather/home: never mirror; only hold a previous real map frame. */
+                        if (d.widget || d.homeGrid) {
+                            if (a.holdLast && hold.has && hold.fromMap) {
+                                keepOrHide(d.widget ? 'widget/weather' : 'home/grid');
+                            } else {
+                                hold.has = false; hold.buf = null; hold.holding = false; hold.fromMap = false;
+                                apply(false);
+                                log('>> hide cluster (' + (d.widget ? 'weather/widget' : 'home/grid') + ')');
+                            }
+                        } else {
+                            keepOrHide('not Dashboard');
+                        }
                         if (a.once) return endOnce();
                         return setTimeout(tick, a.fmtInterval);
                     }
